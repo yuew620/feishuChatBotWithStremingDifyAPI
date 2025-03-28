@@ -29,6 +29,9 @@ func NewMessageAction(provider ai.Provider) *MessageAction {
 }
 
 func (m *MessageAction) Execute(a *ActionInfo) bool {
+	startTime := time.Now()
+	log.Printf("[Timing] Message processing started at: %v", startTime.Format("2006-01-02 15:04:05.000"))
+	
 	// 检查会话是否已经在处理中
 	m.activeSessionsMu.Lock()
 	if m.activeSessions[*a.info.sessionId] {
@@ -65,11 +68,13 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
 	// 发送处理中卡片
+	cardCreateStart := time.Now()
 	cardInfo, err := sendOnProcess(a)
 	if err != nil {
 		log.Printf("Failed to send processing card: %v", err)
 		return false
 	}
+	log.Printf("[Timing] Card creation took: %v ms", time.Since(cardCreateStart).Milliseconds())
 
 	// 从会话缓存中获取历史消息
 	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
@@ -100,9 +105,11 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			close(chatResponseStream)
 		}()
 		
+		aiRequestStart := time.Now()
 		log.Printf("Sending request to AI provider with %d messages", len(aiMessages))
 		if err := m.provider.StreamChat(ctx, aiMessages, chatResponseStream); err != nil {
 			log.Printf("AI provider error: %v", err)
+			log.Printf("[Timing] AI request failed after: %v ms", time.Since(aiRequestStart).Milliseconds())
 			select {
 			case errChan <- err:
 			default:
@@ -121,9 +128,10 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			_ = updateFinalCard(ctx, errorMsg, cardInfo)
 			return false
 
-		case res, ok := <-chatResponseStream:
+			case res, ok := <-chatResponseStream:
 			if !ok {
 				// 流结束，保存会话并更新最终卡片
+				log.Printf("[Timing] Total streaming time: %v ms", time.Since(startTime).Milliseconds())
 				return m.handleCompletion(ctx, a, cardInfo, answer, aiMessages)
 			}
 			noContentTimeout.Stop()
@@ -141,6 +149,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			// 使用流式更新API更新卡片内容
 			currentAnswer := answer
 			
+			updateStart := time.Now()
 			// 记录日志
 			log.Printf("Updating card with new content: %s", res)
 			
@@ -148,6 +157,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			if err := updateTextCard(ctx, currentAnswer, cardInfo); err != nil {
 				log.Printf("Failed to update card: %v", err)
 			}
+			log.Printf("[Timing] Card update took: %v ms", time.Since(updateStart).Milliseconds())
 			
 			// 不再添加延迟，让更新速度最大化
 			m.mu.Unlock()

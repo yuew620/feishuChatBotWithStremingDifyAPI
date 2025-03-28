@@ -162,7 +162,11 @@ func getTenantAccessToken(ctx context.Context) (string, error) {
 
 // 创建卡片实体
 func createCardEntity(ctx context.Context, content string) (string, error) {
+	startTime := time.Now()
+	log.Printf("[Timing] Starting card entity creation")
+	
 	// 获取tenant_access_token
+	tokenStart := time.Now()
 	token, err := getTenantAccessToken(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get tenant_access_token: %w", err)
@@ -235,10 +239,14 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	// 发送请求
+	requestStart := time.Now()
+	log.Printf("[Timing] Token fetch took: %v ms", time.Since(tokenStart).Milliseconds())
+	
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
+	log.Printf("[Timing] Card entity API request took: %v ms", time.Since(requestStart).Milliseconds())
 	defer resp.Body.Close()
 
 	// 检查响应状态
@@ -265,12 +273,17 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 	}
 	
 	log.Printf("Successfully created card entity with ID: %s", result.Data.CardID)
+	log.Printf("[Timing] Total card entity creation took: %v ms", time.Since(startTime).Milliseconds())
 	return result.Data.CardID, nil
 }
 
 // 发送卡片实体
 func sendCardEntity(ctx context.Context, cardID string, receiveID string) (string, error) {
+	startTime := time.Now()
+	log.Printf("[Timing] Starting to send card entity")
+	
 	// 获取tenant_access_token
+	tokenStart := time.Now()
 	token, err := getTenantAccessToken(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get tenant_access_token: %w", err)
@@ -317,10 +330,14 @@ func sendCardEntity(ctx context.Context, cardID string, receiveID string) (strin
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	// 发送请求
+	requestStart := time.Now()
+	log.Printf("[Timing] Token fetch took: %v ms", time.Since(tokenStart).Milliseconds())
+	
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
+	log.Printf("[Timing] Card send API request took: %v ms", time.Since(requestStart).Milliseconds())
 	defer resp.Body.Close()
 
 	// 检查响应状态
@@ -346,6 +363,7 @@ func sendCardEntity(ctx context.Context, cardID string, receiveID string) (strin
 		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
 	}
 	
+	log.Printf("[Timing] Total card entity sending took: %v ms", time.Since(startTime).Milliseconds())
 	return result.Data.MessageID, nil
 }
 
