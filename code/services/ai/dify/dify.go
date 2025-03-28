@@ -29,8 +29,9 @@ type DifyProvider struct {
 	conversationsMu sync.RWMutex
 	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
 	
-	// 用于限制发送频率
-	rateLimitMu   sync.Mutex
+	// 用于累积内容的缓冲区
+	bufferMu      sync.Mutex
+	buffer        string
 	lastSendTime  time.Time
 }
 
@@ -331,6 +332,11 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 						}
 					}
 					
+					// 发送缓冲区中剩余的内容
+					if err := d.sendBufferWithRateLimit(responseStream, true); err != nil {
+						return err
+					}
+					
 					return nil
 				}
 				return ai.NewError(ai.ErrInvalidResponse, "error reading stream", err)
@@ -431,11 +437,14 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			if d.sentContent[content] {
 				log.Printf("Skipping duplicate content: %s", content)
 			} else {
-				log.Printf("Processing content: %s", content)
+				log.Printf("Adding content to buffer: %s", content)
 				d.sentContent[content] = true
 				
-				// 根据时间间隔和是否是最后一条消息决定是否发送内容
-				if err := d.sendWithRateLimit(content, responseStream, ctx); err != nil {
+				// 添加内容到缓冲区
+				d.addToBuffer(content)
+				
+				// 尝试发送缓冲区内容
+				if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
 					return err
 				}
 			}
@@ -466,6 +475,10 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			fmt.Sprintf("stream error: %s", streamResp.Data.Text), 
 			nil)
 	case "done", "message_end":
+		// 消息结束，发送缓冲区中剩余的内容
+		if err := d.sendBufferWithRateLimit(responseStream, true); err != nil {
+			return err
+		}
 		return nil
 	case "ping":
 		// 忽略心跳事件
@@ -478,37 +491,40 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 	return nil
 }
 
-// sendWithRateLimit 根据时间间隔和是否是最后一条消息决定是否发送内容
-func (d *DifyProvider) sendWithRateLimit(content string, responseStream chan string, ctx context.Context) error {
-	d.rateLimitMu.Lock()
-	defer d.rateLimitMu.Unlock()
+// addToBuffer 将内容添加到缓冲区
+func (d *DifyProvider) addToBuffer(content string) {
+	d.bufferMu.Lock()
+	defer d.bufferMu.Unlock()
+	
+	// 添加内容到缓冲区
+	d.buffer += content
+}
+
+// sendBufferWithRateLimit 根据时间间隔决定是否发送缓冲区内容
+func (d *DifyProvider) sendBufferWithRateLimit(responseStream chan string, isMessageEnd bool) error {
+	d.bufferMu.Lock()
+	defer d.bufferMu.Unlock()
+	
+	// 如果缓冲区为空，不需要发送
+	if d.buffer == "" {
+		return nil
+	}
 	
 	// 检查是否应该发送内容
 	now := time.Now()
-	shouldSend := now.Sub(d.lastSendTime) >= 20*time.Millisecond
+	shouldSend := now.Sub(d.lastSendTime) >= 100*time.Millisecond
 	
-	// 检查是否是最后一条消息（包含实际内容的消息）
-	isLastMessage := false
-	
-	// 如果内容中包含完整的句子或段落，可能是最后一条消息
-	if strings.Contains(content, "。") || strings.Contains(content, ".") || 
-	   strings.Contains(content, "!") || strings.Contains(content, "！") ||
-	   strings.Contains(content, "?") || strings.Contains(content, "？") {
-		isLastMessage = true
-	}
-	
-	// 如果应该发送（时间间隔大于20ms）或者是最后一条消息，则发送
-	if shouldSend || isLastMessage {
-		log.Printf("Sending content to response stream: %s", content)
+	// 如果应该发送（时间间隔大于100ms）或者是消息结束，则发送
+	if shouldSend || isMessageEnd {
+		log.Printf("Sending buffered content to response stream: %s", d.buffer)
 		select {
-		case responseStream <- content:
-			// 发送成功，更新最后发送时间
+		case responseStream <- d.buffer:
+			// 发送成功，清空缓冲区并更新最后发送时间
+			d.buffer = ""
 			d.lastSendTime = now
 		default:
 			return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 		}
-	} else {
-		log.Printf("Skipping content due to rate limiting: %s", content)
 	}
 	
 	return nil
