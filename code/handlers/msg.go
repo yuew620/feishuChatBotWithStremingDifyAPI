@@ -45,7 +45,6 @@ func getNextSequence() int64 {
 
 // 获取tenant_access_token
 func getTenantAccessToken(ctx context.Context) (string, error) {
-	client := initialization.GetLarkClient()
 	config := initialization.GetConfig()
 	
 	// 构建请求体
@@ -367,6 +366,8 @@ func withMainText(msg string) larkcard.MessageCardElement {
 	if i != nil {
 		return nil
 	}
+	
+	// 创建基本元素
 	mainElement := larkcard.NewMessageCardDiv().
 		Fields([]*larkcard.MessageCardField{larkcard.NewMessageCardField().
 			Text(larkcard.NewMessageCardPlainText().
@@ -374,9 +375,36 @@ func withMainText(msg string) larkcard.MessageCardElement {
 				Build()).
 			IsShort(false).
 			Build()}).
-		ElementId("content_block"). // 为流式更新设置element_id
 		Build()
-	return mainElement
+	
+	// 获取JSON字符串
+	elementJSON, err := json.Marshal(mainElement)
+	if err != nil {
+		return mainElement
+	}
+	
+	// 解析JSON以添加element_id
+	var elementMap map[string]interface{}
+	if err := json.Unmarshal(elementJSON, &elementMap); err != nil {
+		return mainElement
+	}
+	
+	// 添加element_id
+	elementMap["element_id"] = "content_block"
+	
+	// 重新序列化
+	modifiedJSON, err := json.Marshal(elementMap)
+	if err != nil {
+		return mainElement
+	}
+	
+	// 创建新的元素
+	var newElement larkcard.MessageCardElement
+	if err := json.Unmarshal(modifiedJSON, &newElement); err != nil {
+		return mainElement
+	}
+	
+	return newElement
 }
 
 // withHeader 用于生成消息头
@@ -650,7 +678,8 @@ func newMenu(placeHolder string, value map[string]interface{}, options ...MenuOp
 			Build())
 	}
 
-	menu := larkcard.NewMessageCardEmbedSelectStaticMenu().
+	// 创建基本菜单
+	menu := larkcard.NewMessageCardEmbedSelectMenu().
 		Options(selectOptions).
 		Placeholder(larkcard.NewMessageCardPlainText().
 			Content(placeHolder).
