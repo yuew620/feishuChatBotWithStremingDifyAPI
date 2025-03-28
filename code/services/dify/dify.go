@@ -35,6 +35,15 @@ type StreamResponse struct {
 	} `json:"data"`
 }
 
+// mustMarshal 将数据序列化为JSON，如果出错则panic
+func mustMarshal(v interface{}) []byte {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("json marshal error: %v", err))
+	}
+	return data
+}
+
 func NewDifyClient(config *initialization.Config) *DifyClient {
 	return &DifyClient{
 		config: config,
@@ -46,8 +55,19 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	lastMsg := messages[len(messages)-1]
 	historicalMessages := messages[:len(messages)-1]
 	
+	// 构建消息历史
+	var messageHistory []map[string]string
+	for _, msg := range historicalMessages {
+		messageHistory = append(messageHistory, map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		})
+	}
+
 	reqBody := StreamRequest{
-		Inputs:          map[string]string{},
+		Inputs: map[string]string{
+			"history": string(mustMarshal(messageHistory)),
+		},
 		Query:           lastMsg.Content,
 		ResponseMode:    "streaming",
 		ConversationId:  "",
