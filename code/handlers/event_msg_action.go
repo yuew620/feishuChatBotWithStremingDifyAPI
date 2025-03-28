@@ -167,17 +167,24 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			}
 			noContentTimeout.Stop()
 			m.mu.Lock()
-			answer += res
+			// Only append if it's new content
+			if !strings.Contains(answer, res) {
+				if answer != "" {
+					answer += "\n"  // Add newline between responses
+				}
+				answer += res
+				// Update card immediately with new content
+				if err := updateTextCard(ctx, answer, cardId); err != nil {
+					log.Printf("Failed to update card: %v", err)
+				}
+			} else {
+				log.Printf("Skipping duplicate content in card update: %s", res)
+			}
 			m.mu.Unlock()
 
 		case <-updateChan:
-			m.mu.Lock()
-			currentAnswer := answer
-			m.mu.Unlock()
-			
-			if err := updateTextCard(ctx, currentAnswer, cardId); err != nil {
-				log.Printf("Failed to update card: %v", err)
-			}
+			// No need to update here since we're updating immediately when receiving content
+			continue
 
 		case <-ctx.Done():
 			_ = updateFinalCard(ctx, "请求超时", cardId)

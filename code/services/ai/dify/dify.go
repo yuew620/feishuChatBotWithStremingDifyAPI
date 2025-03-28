@@ -18,6 +18,7 @@ type DifyProvider struct {
 	config     ai.Config
 	httpClient *http.Client
 	mu         sync.RWMutex
+	sentContent map[string]bool  // Track content we've already sent
 }
 
 // Dify API请求结构
@@ -58,11 +59,17 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 			Transport: transport,
 			Timeout:   config.GetTimeout(),
 		},
+		sentContent: make(map[string]bool),
 	}
 }
 
 // StreamChat 实现Provider接口
 func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, responseStream chan string) error {
+	// Clear sent content map at the start of each chat
+	d.mu.Lock()
+	d.sentContent = make(map[string]bool)
+	d.mu.Unlock()
+
 	// 验证消息
 	if err := d.validateMessages(messages); err != nil {
 		return err
@@ -274,8 +281,14 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 		return ai.NewError(ai.ErrInvalidResponse, "error unmarshaling response", err)
 	}
 
-	// Log the raw response for debugging
-	log.Printf("Received SSE event: %s with text: %s", streamResp.Event, streamResp.Data.Text)
+	// Log the event type and content details
+	log.Printf("Processing SSE event: %s", streamResp.Event)
+	if streamResp.Event == "message" || streamResp.Event == "agent_message" {
+		log.Printf("Message content - Text: %s, Answer: %s, Message: %s", 
+			streamResp.Data.Text, streamResp.Data.Answer, streamResp.Data.Message)
+	} else if streamResp.Event == "agent_thought" {
+		log.Printf("Thought content: %s", streamResp.Thought)
+	}
 
 	switch streamResp.Event {
 	case "message", "agent_message":
@@ -290,21 +303,31 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 
 		// 检查消息长度，避免超过飞书卡片限制
 		if len(content) > 0 {
-			log.Printf("Sending text to response stream: %s", content)
-			select {
-			case responseStream <- content:
-			default:
-				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+			if d.sentContent[content] {
+				log.Printf("Skipping duplicate content: %s", content)
+			} else {
+				log.Printf("Sending new content to response stream: %s", content)
+				d.sentContent[content] = true
+				select {
+				case responseStream <- content:
+				default:
+					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+				}
 			}
 		}
 	case "agent_thought":
 		// Handle agent_thought event specifically
 		if streamResp.Thought != "" {
-			log.Printf("Found thought content: %s", streamResp.Thought)
-			select {
-			case responseStream <- streamResp.Thought:
-			default:
-				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+			if d.sentContent[streamResp.Thought] {
+				log.Printf("Skipping duplicate thought: %s", streamResp.Thought)
+			} else {
+				log.Printf("Sending new thought to response stream: %s", streamResp.Thought)
+				d.sentContent[streamResp.Thought] = true
+				select {
+				case responseStream <- streamResp.Thought:
+				default:
+					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+				}
 			}
 		}
 	case "error":
