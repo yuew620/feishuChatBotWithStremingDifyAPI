@@ -59,9 +59,13 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		return fmt.Errorf("error marshaling request: %v", err)
 	}
 
+	// 构建完整的API URL（处理末尾斜杠）
+	baseUrl := strings.TrimRight(d.config.DifyApiUrl, "/")
+	apiUrl := fmt.Sprintf("%s/v1/chat-messages", baseUrl)
+
 	// 打印请求详情
 	fmt.Printf("Sending request to Dify:\nURL: %s\nHeaders: %v\nBody: %s\n", 
-		d.config.DifyApiUrl,
+		apiUrl,
 		map[string]string{
 			"Content-Type": "application/json",
 			"Authorization": fmt.Sprintf("Bearer %s", d.config.DifyApiKey),
@@ -70,7 +74,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "POST", 
-		d.config.DifyApiUrl, 
+		apiUrl, 
 		strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return fmt.Errorf("error creating request: %v", err)
