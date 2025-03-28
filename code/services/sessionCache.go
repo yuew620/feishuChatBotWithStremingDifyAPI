@@ -30,7 +30,7 @@ const (
 	MaxTotalSessions  = 10000          // 总会话数限制
 	MaxMessageLength  = 4096           // 单条消息最大长度
 	MaxMessagesPerSession = 100        // 每个会话最大消息数
-	MemoryLimit       = 1024 * 1024 * 1024 // 1GB内存限制
+	MemoryLimit       = 4 * 1024 * 1024 * 1024 // 4GB内存限制，总内存6GB
 )
 
 // SessionMeta 会话元数据
@@ -176,7 +176,7 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 	size := s.calculateSessionSize(messages)
 
 	// 检查内存限制
-	if atomic.LoadInt64(&s.totalMemoryUsed)+size > MemoryLimit {
+	if atomic.LoadInt64(&s.totalMemoryUsed)+size > int64(MemoryLimit) {
 		// 触发清理
 		s.forceCleanup()
 		// 再次检查
@@ -189,7 +189,7 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 	var sessionMeta *SessionMeta
 	if !exists {
 		// 检查总会话数限制
-		if atomic.LoadInt32(&s.totalSessions) >= MaxTotalSessions {
+		if atomic.LoadInt32(&s.totalSessions) >= int32(MaxTotalSessions) {
 			s.forceCleanup()
 			if atomic.LoadInt32(&s.totalSessions) >= MaxTotalSessions {
 				return fmt.Errorf("max sessions limit exceeded")
@@ -338,7 +338,7 @@ func (s *SessionService) forceCleanup() {
 	s.CleanExpiredSessions()
 	
 	// 如果还需要清理，按最后访问时间清理
-	if atomic.LoadInt64(&s.totalMemoryUsed) > MemoryLimit*0.9 {
+	if atomic.LoadInt64(&s.totalMemoryUsed) > int64(float64(MemoryLimit)*0.9) {
 		items := s.cache.Items()
 		sessions := make([]*struct {
 			id   string
@@ -381,7 +381,7 @@ func (s *SessionService) monitorMemory() {
 		runtime.ReadMemStats(&m)
 		
 		// 如果总内存使用超过限制的80%，触发清理
-		if m.Alloc > uint64(MemoryLimit*0.8) {
+		if m.Alloc > uint64(float64(MemoryLimit)*0.8) {
 			log.Printf("Memory usage high (%.2f MB), triggering cleanup", float64(m.Alloc)/1024/1024)
 			s.forceCleanup()
 		}

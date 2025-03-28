@@ -185,7 +185,7 @@ const (
     MaxSessionsPerUser = 10
     MaxTotalSessions  = 10000
     MaxMessageLength  = 4096
-    MemoryLimit      = 1024 * 1024 * 1024 // 1GB
+    MemoryLimit      = 4 * 1024 * 1024 * 1024 // 4GB会话缓存限制（总内存6GB）
 )
 ```
 
@@ -237,7 +237,11 @@ tail -n 100 logs/app.log | grep -i error
 
 ## 注意事项
 
-1. 确保配置文件中的所有密钥和Token都已正确填写
+1. 内存使用说明：
+   - 总内存限制：6GB（Docker配置）
+   - 会话缓存限制：4GB
+   - 系统和其他使用：2GB
+2. 确保配置文件中的所有密钥和Token都已正确填写
 2. 确保9000端口未被占用
 3. 确保有足够的磁盘空间和内存
 4. 建议配置HTTPS（生产环境）
