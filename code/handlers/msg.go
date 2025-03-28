@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"sync"
 	"sync/atomic"
+	"time"
 	"github.com/google/uuid"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -43,8 +46,34 @@ func getNextSequence() int64 {
 	return atomic.AddInt64(&sequenceCounter, 1)
 }
 
-// 获取tenant_access_token
+// Token缓存相关变量
+var (
+	tokenCache     string
+	tokenExpiry    time.Time
+	tokenCacheMu   sync.RWMutex
+)
+
+// 获取tenant_access_token（带缓存）
 func getTenantAccessToken(ctx context.Context) (string, error) {
+	// 使用读锁检查缓存
+	tokenCacheMu.RLock()
+	if tokenCache != "" && time.Now().Before(tokenExpiry.Add(-5*time.Minute)) { // 提前5分钟刷新
+		token := tokenCache
+		tokenCacheMu.RUnlock()
+		return token, nil
+	}
+	tokenCacheMu.RUnlock()
+	
+	// 使用写锁更新缓存
+	tokenCacheMu.Lock()
+	defer tokenCacheMu.Unlock()
+	
+	// 双重检查，避免多次刷新
+	if tokenCache != "" && time.Now().Before(tokenExpiry.Add(-5*time.Minute)) {
+		return tokenCache, nil
+	}
+	
+	// 以下是原始获取token的逻辑
 	config := initialization.GetConfig()
 	
 	// 构建请求体
@@ -73,6 +102,11 @@ func getTenantAccessToken(ctx context.Context) (string, error) {
 	// 发送请求
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		// 如果获取失败但旧token仍有效，继续使用旧token
+		if tokenCache != "" && time.Now().Before(tokenExpiry) {
+			log.Printf("Failed to refresh token, using existing token: %v", err)
+			return tokenCache, nil
+		}
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -80,6 +114,11 @@ func getTenantAccessToken(ctx context.Context) (string, error) {
 	// 检查响应状态
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		// 如果获取失败但旧token仍有效，继续使用旧token
+		if tokenCache != "" && time.Now().Before(tokenExpiry) {
+			log.Printf("Failed to refresh token (status %d), using existing token: %s", resp.StatusCode, string(body))
+			return tokenCache, nil
+		}
 		return "", fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
 	}
 
@@ -92,12 +131,31 @@ func getTenantAccessToken(ctx context.Context) (string, error) {
 	}
 	
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		// 如果解析失败但旧token仍有效，继续使用旧token
+		if tokenCache != "" && time.Now().Before(tokenExpiry) {
+			log.Printf("Failed to decode token response, using existing token: %v", err)
+			return tokenCache, nil
+		}
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 	
 	if result.Code != 0 {
+		// 如果API返回错误但旧token仍有效，继续使用旧token
+		if tokenCache != "" && time.Now().Before(tokenExpiry) {
+			log.Printf("API error when refreshing token, using existing token: code=%d, msg=%s", result.Code, result.Msg)
+			return tokenCache, nil
+		}
 		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
 	}
+	
+	// 更新缓存
+	tokenCache = result.TenantAccessToken
+	// 使用API返回的过期时间，默认减去5分钟作为安全边界
+	expiresIn := result.Expire
+	if expiresIn == 0 {
+		expiresIn = 7200 // 默认2小时
+	}
+	tokenExpiry = time.Now().Add(time.Duration(expiresIn-300) * time.Second)
 	
 	return result.TenantAccessToken, nil
 }
@@ -1060,8 +1118,83 @@ func SendRoleListCard(ctx context.Context, sessionId *string, msgId *string, rol
 	replyCard(ctx, msgId, newCard)
 }
 
+// 创建简化的卡片JSON
+func createSimpleCard(content string) (string, error) {
+	// 使用结构体和标准JSON库，而不是字符串拼接
+	cardStruct := struct {
+		Schema string `json:"schema"`
+		Config struct {
+			StreamingMode bool `json:"streaming_mode"`
+			UpdateMulti   bool `json:"update_multi"`
+		} `json:"config"`
+		Body struct {
+			Elements []struct {
+				Tag       string `json:"tag"`
+				Content   string `json:"content"`
+				ElementID string `json:"element_id"`
+			} `json:"elements"`
+		} `json:"body"`
+	}{
+		Schema: "2.0",
+		Config: struct {
+			StreamingMode bool `json:"streaming_mode"`
+			UpdateMulti   bool `json:"update_multi"`
+		}{
+			StreamingMode: true,
+			UpdateMulti:   true,
+		},
+		Body: struct {
+			Elements []struct {
+				Tag       string `json:"tag"`
+				Content   string `json:"content"`
+				ElementID string `json:"element_id"`
+			} `json:"elements"`
+		}{
+			Elements: []struct {
+				Tag       string `json:"tag"`
+				Content   string `json:"content"`
+				ElementID string `json:"element_id"`
+			}{
+				{
+					Tag:       "markdown",
+					Content:   content,
+					ElementID: "content_block",
+				},
+			},
+		},
+	}
+	
+	// 使用标准库进行JSON序列化，处理转义和格式
+	jsonBytes, err := json.Marshal(cardStruct)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal card: %w", err)
+	}
+	
+	return string(jsonBytes), nil
+}
+
 // 发送处理中卡片
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*string, error) {
+	content := "正在思考中，请稍等..."
+	
+	// 使用简化的卡片创建流程
+	card, err := createSimpleCard(content)
+	if err != nil {
+		// 回退到原始方法
+		log.Printf("Failed to create simple card: %v, falling back to original method", err)
+		return sendOnProcessCardOriginal(ctx, sessionId, msgId)
+	}
+	
+	cardId, err := replyCardWithBackId(ctx, msgId, card)
+	if err != nil {
+		return nil, err
+	}
+	
+	return cardId, nil
+}
+
+// 原始的发送处理中卡片方法（作为回退）
+func sendOnProcessCardOriginal(ctx context.Context, sessionId *string, msgId *string) (*string, error) {
 	content := "正在思考中，请稍等..."
 	card, err := newSendCardWithOutHeader(withMainText(content))
 	if err != nil {
@@ -1074,4 +1207,27 @@ func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*
 	}
 	
 	return cardId, nil
+}
+
+// 处理消息内容
+func processMessage(msg string) (string, error) {
+	if len(msg) == 0 {
+		return "", fmt.Errorf("empty message")
+	}
+	// 这里可以添加其他消息处理逻辑
+	return msg, nil
+}
+
+// 清理文本块
+func cleanTextBlock(msg string) string {
+	// 移除多余的空白字符
+	msg = strings.TrimSpace(msg)
+	// 这里可以添加其他文本清理逻辑
+	return msg
+}
+
+// 处理换行符
+func processNewLine(msg string) string {
+	// 将\n转换为实际的换行符
+	return strings.ReplaceAll(msg, "\\n", "\n")
 }
