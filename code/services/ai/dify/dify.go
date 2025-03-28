@@ -16,11 +16,20 @@ import (
 	"time"
 )
 
+type conversationEntry struct {
+	conversationID string
+	timestamp      time.Time
+}
+
 type DifyProvider struct {
 	config     ai.Config
 	httpClient *http.Client
 	mu         sync.RWMutex
 	sentContent map[string]bool  // Track content we've already sent
+	
+	// 会话ID到Dify conversation ID的映射
+	conversationsMu sync.RWMutex
+	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
 }
 
 // Dify API请求结构
@@ -34,15 +43,17 @@ type streamRequest struct {
 
 // Dify API响应结构
 type streamResponse struct {
-	Event      string            `json:"event"`
-	Thought    string            `json:"thought,omitempty"`    // agent_thought events use this field
+	Event           string            `json:"event"`
+	Thought         string            `json:"thought,omitempty"`    // agent_thought events use this field
+	ConversationId  string            `json:"conversation_id,omitempty"` // 会话ID
 	Data       struct {
-		Text      string            `json:"text"`
-		Answer    string            `json:"answer,omitempty"`  // Some events use answer field
-		Message   string            `json:"message,omitempty"` // Some events use message field
-		ErrorCode string            `json:"error_code,omitempty"`
-		Error     string            `json:"error,omitempty"`
-		Metadata  map[string]string `json:"metadata,omitempty"` // 元数据
+		Text          string            `json:"text"`
+		Answer        string            `json:"answer,omitempty"`  // Some events use answer field
+		Message       string            `json:"message,omitempty"` // Some events use message field
+		ErrorCode     string            `json:"error_code,omitempty"`
+		Error         string            `json:"error,omitempty"`
+		Metadata      map[string]string `json:"metadata,omitempty"` // 元数据
+		ConversationId string            `json:"conversation_id,omitempty"` // 有时会在data中返回会话ID
 	} `json:"data"`
 }
 
@@ -55,14 +66,46 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 		DisableCompression:  true, // 禁用压缩以避免流式传输问题
 	}
 
-	return &DifyProvider{
+	provider := &DifyProvider{
 		config: config,
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   config.GetTimeout(),
 		},
 		sentContent: make(map[string]bool),
+		conversations: make(map[string]conversationEntry),
 	}
+	
+	// 启动一个后台goroutine，定期清理过期的会话缓存
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour) // 每小时检查一次
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			provider.cleanupConversations()
+		}
+	}()
+	
+	return provider
+}
+
+// cleanupConversations 清理超过12小时的会话缓存
+func (d *DifyProvider) cleanupConversations() {
+	d.conversationsMu.Lock()
+	defer d.conversationsMu.Unlock()
+	
+	now := time.Now()
+	expiredTime := now.Add(-12 * time.Hour) // 12小时过期
+	
+	// 遍历所有会话，删除过期的
+	for sessionID, entry := range d.conversations {
+		if entry.timestamp.Before(expiredTime) {
+			delete(d.conversations, sessionID)
+			log.Printf("Cleaned up expired conversation for session %s", sessionID)
+		}
+	}
+	
+	log.Printf("Conversation cache cleanup completed, remaining entries: %d", len(d.conversations))
 }
 
 // StreamChat 实现Provider接口
@@ -116,23 +159,16 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		log.Printf("Found session_id from metadata: %s", sessionID)
 	}
 	
-	// 为Dify生成一个有效的UUID作为conversation_id
-	// 我们使用会话ID的哈希值来生成一个确定性的UUID
-	// 这样同一个会话的消息会使用相同的conversation_id
+	// 检查是否有缓存的conversation_id
 	conversationID := ""
 	if sessionID != "" {
-		// 使用会话ID的哈希值生成UUID的前16个字节
-		h := sha256.New()
-		h.Write([]byte(sessionID))
-		hash := h.Sum(nil)
-		
-		// 创建一个版本4的UUID (随机UUID)
-		u := uuid.New()
-		// 用哈希值的前16个字节替换UUID的字节
-		copy(u[:], hash[:16])
-		
-		conversationID = u.String()
-		log.Printf("Generated conversation_id from session_id: %s", conversationID)
+		// 从缓存中获取conversation_id
+		d.conversationsMu.RLock()
+		if entry, ok := d.conversations[sessionID]; ok {
+			conversationID = entry.conversationID
+			log.Printf("Using cached conversation_id for session %s: %s", sessionID, conversationID)
+		}
+		d.conversationsMu.RUnlock()
 	}
 	
 	// 从最后一条消息中提取用户ID
@@ -166,9 +202,22 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 			log.Printf("Retrying request (attempt %d/%d)", retry+1, d.config.GetMaxRetries())
 		}
 
-		err := d.doStreamRequest(ctx, reqBody, responseStream)
+		// 创建一个新的上下文，包含会话ID
+		ctxWithSessionID := context.WithValue(ctx, "sessionID", sessionID)
+		err := d.doStreamRequest(ctxWithSessionID, reqBody, responseStream)
 		if err == nil {
 			return nil
+		}
+
+		// 检查是否是"Conversation Not Exists"错误
+		if strings.Contains(err.Error(), "Conversation Not Exists") {
+			log.Printf("Conversation not found, retrying without conversation_id")
+			// 清除conversation_id并重试
+			reqBody.ConversationId = ""
+			err = d.doStreamRequest(ctx, reqBody, responseStream)
+			if err == nil {
+				return nil
+			}
 		}
 
 		// 判断是否是临时错误
@@ -208,6 +257,8 @@ func (d *DifyProvider) validateMessages(messages []ai.Message) error {
 }
 
 func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamRequest, responseStream chan string) error {
+	// 从上下文中提取会话ID，用于存储conversation_id
+	sessionID, _ := ctx.Value("sessionID").(string)
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return ai.NewError(ai.ErrInvalidMessage, "error marshaling request", err)
@@ -288,7 +339,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 				if err == io.EOF {
 					// 处理最后一行（如果有）
 					if partialLine != "" {
-						if err := d.processSSELine(partialLine, responseStream); err != nil {
+						if err := d.processSSELine(partialLine, responseStream, ctx); err != nil {
 							return err
 						}
 					}
@@ -306,7 +357,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 				if line == "" {
 					continue
 				}
-				if err := d.processSSELine(line, responseStream); err != nil {
+				if err := d.processSSELine(line, responseStream, ctx); err != nil {
 					return err
 				}
 			}
@@ -317,7 +368,9 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	}
 }
 
-func (d *DifyProvider) processSSELine(line string, responseStream chan string) error {
+func (d *DifyProvider) processSSELine(line string, responseStream chan string, ctx context.Context) error {
+	// 从上下文中提取会话ID，用于存储conversation_id
+	sessionID, _ := ctx.Value("sessionID").(string)
 	if !strings.HasPrefix(line, "data: ") {
 		// 不是数据行，可能是注释或心跳
 		return nil
@@ -345,6 +398,26 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 			streamResp.Data.Text, streamResp.Data.Answer, streamResp.Data.Message)
 	} else if streamResp.Event == "agent_thought" {
 		log.Printf("Thought content: %s", streamResp.Thought)
+	}
+	
+	// 提取conversation_id并存储到缓存中
+	if sessionID != "" {
+		// 首先检查响应中是否包含conversation_id
+		conversationID := streamResp.ConversationId
+		if conversationID == "" {
+			conversationID = streamResp.Data.ConversationId
+		}
+		
+		// 如果找到了conversation_id，存储到缓存中
+		if conversationID != "" {
+			d.conversationsMu.Lock()
+			d.conversations[sessionID] = conversationEntry{
+				conversationID: conversationID,
+				timestamp:      time.Now(),
+			}
+			d.conversationsMu.Unlock()
+			log.Printf("Stored conversation_id %s for session %s", conversationID, sessionID)
+		}
 	}
 
 	switch streamResp.Event {

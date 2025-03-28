@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -1275,20 +1276,73 @@ func getChatIdFromMsgId(ctx context.Context, msgId *string) string {
 
 // 发送处理中卡片
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
-	// 使用原始方法，暂时不使用新的流式更新API
-	// 这是因为新的API需要chatId，但我们无法从msgId可靠地获取chatId
+	// 创建一个简单的卡片内容
+	content := "正在思考中，请稍等..."
+	
+	// 创建卡片实体
+	cardEntityId, err := createCardEntity(ctx, content)
+	if err != nil {
+		log.Printf("Failed to create card entity: %v", err)
+		// 回退到原始方法
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	// 获取聊天ID
+	chatId := getChatIdFromMsgId(ctx, msgId)
+	if chatId == "" {
+		log.Printf("Failed to get chat ID from message ID, falling back to original method")
+		// 回退到原始方法
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	// 发送卡片实体
+	messageId, err := sendCardEntity(ctx, cardEntityId, chatId)
+	if err != nil {
+		log.Printf("Failed to send card entity: %v", err)
+		// 回退到原始方法
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	log.Printf("Successfully sent card entity: cardId=%s, messageId=%s", cardEntityId, messageId)
+	
+	// 返回卡片信息
+	return &CardInfo{
+		CardEntityId: cardEntityId,
+		MessageId:    messageId,
+		ElementId:    "content_block",
+	}, nil
+}
+
+// 回退方法，使用原始的发送处理中卡片方法
+func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
+	log.Printf("Using fallback method for sending processing card")
 	messageId, err := sendOnProcessCardOriginal(ctx, sessionId, msgId)
 	if err != nil {
 		return nil, err
 	}
 	
-	// 返回卡片信息，使用消息ID作为卡片实体ID
-	// 这不是真正的卡片实体ID，但对于我们的目的来说足够了
+	// 生成一个短的卡片ID (最大20个字符)
+	shortCardId := generateShortCardId(*messageId)
+	log.Printf("Generated short card ID: %s from message ID: %s", shortCardId, *messageId)
+	
+	// 返回卡片信息
 	return &CardInfo{
-		CardEntityId: *messageId,
+		CardEntityId: shortCardId,
 		MessageId:    *messageId,
 		ElementId:    "content_block",
 	}, nil
+}
+
+// 生成短卡片ID (最大20个字符)
+func generateShortCardId(messageId string) string {
+	// 使用消息ID的哈希值生成短ID
+	h := sha256.New()
+	h.Write([]byte(messageId))
+	hash := h.Sum(nil)
+	
+	// 使用base64编码，并截取前20个字符
+	shortId := base64.URLEncoding.EncodeToString(hash)[:20]
+	return shortId
 }
 
 // 原始的发送处理中卡片方法（作为回退）
