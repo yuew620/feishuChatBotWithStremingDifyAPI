@@ -131,8 +131,11 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	}()
 
 	// 启动卡片更新协程
-	ticker := time.NewTicker(700 * time.Millisecond)
+	ticker := time.NewTicker(300 * time.Millisecond)  // 更新频率提高到300ms
 	defer ticker.Stop()
+
+	var updateBuffer strings.Builder  // 用于缓存更新内容
+	lastUpdate := time.Now()
 
 	updateChan := make(chan struct{}, 1)
 	go func() {
@@ -173,9 +176,21 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 					answer += "\n"  // Add newline between responses
 				}
 				answer += res
-				// Update card immediately with new content
-				if err := updateTextCard(ctx, answer, cardId); err != nil {
-					log.Printf("Failed to update card: %v", err)
+				updateBuffer.WriteString(res)
+				
+				// 如果距离上次更新超过100ms或缓冲区超过50字符，就更新卡片
+				if time.Since(lastUpdate) > 100*time.Millisecond || updateBuffer.Len() > 50 {
+					currentAnswer := answer
+					bufferContent := updateBuffer.String()
+					updateBuffer.Reset()
+					lastUpdate = time.Now()
+					
+					// 异步更新卡片，避免阻塞主流程
+					go func(content string) {
+						if err := updateTextCard(ctx, content, cardId); err != nil {
+							log.Printf("Failed to update card: %v", err)
+						}
+					}(currentAnswer)
 				}
 			} else {
 				log.Printf("Skipping duplicate content in card update: %s", res)

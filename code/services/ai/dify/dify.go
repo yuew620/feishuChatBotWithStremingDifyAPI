@@ -217,7 +217,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 
 	// 处理流式响应
 	reader := bufio.NewReader(resp.Body)
-	buffer := make([]byte, 4096) // 增加缓冲区大小
+	buffer := make([]byte, 1024) // 减小缓冲区大小以获得更频繁的更新
 	var partialLine string
 
 	for {
