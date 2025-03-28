@@ -231,5 +231,3 @@ func updateTextCard(ctx context.Context, msg string, cardId *string) error {
 	}
 	return nil
 }
-
-[其余函数保持不变...]
