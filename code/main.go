@@ -72,11 +72,16 @@ func main() {
 		})
 	})
 	r.POST("/webhook/event", func(c *gin.Context) {
+		log.Printf("Received webhook request with type: %s", c.Request.Header.Get("X-Lark-Request-Type"))
+		
 		// Handle URL verification first
 		if handlers.HandleUrlVerification(c) {
+			log.Printf("Finished handling URL verification request")
 			return
 		}
+		
 		// Handle other events
+		log.Printf("Handling non-verification event")
 		sdkginext.NewEventHandlerFunc(eventHandler)(c)
 	})
 	r.POST("/webhook/card",
