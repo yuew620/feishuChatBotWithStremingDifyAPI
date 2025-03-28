@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -44,24 +45,22 @@ func HandleUrlVerification(c *gin.Context) bool {
 
 	log.Printf("Handling URL verification request")
 
-		// Only verify token if it's configured
-		config := initialization.GetConfig()
-		if config.FeishuAppVerificationToken != "" {
-			if event.Token != config.FeishuAppVerificationToken {
-				log.Printf("Invalid verification token: %s", event.Token)
-				return true
-			}
-			log.Printf("Verification token matched")
-		} else {
-			log.Printf("Verification token check skipped (not configured)")
+	// Only verify token if it's configured
+	config := initialization.GetConfig()
+	if config.FeishuAppVerificationToken != "" {
+		if event.Token != config.FeishuAppVerificationToken {
+			log.Printf("Invalid verification token: %s", event.Token)
+			return false
 		}
-		
-		// Return exactly what Feishu expects: {"challenge": "value"}
-		c.Header("Content-Type", "application/json")
-		response := fmt.Sprintf(`{"challenge":"%s"}`+"\n", event.Challenge)
-		c.String(http.StatusOK, response)
-		log.Printf("Responded with challenge: %s", event.Challenge)
-		return true
+		log.Printf("Verification token matched")
+	} else {
+		log.Printf("Verification token check skipped (not configured)")
 	}
-	return false
+	
+	// Return exactly what Feishu expects: {"challenge": "value"}
+	c.Header("Content-Type", "application/json")
+	response := fmt.Sprintf(`{"challenge":"%s"}`+"\n", event.Challenge)
+	c.String(http.StatusOK, response)
+	log.Printf("Responded with challenge: %s", event.Challenge)
+	return true
 }
