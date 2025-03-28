@@ -134,9 +134,8 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			if answer == "" {
 				answer = res
 			} else {
-				// 确保新内容是前一次更新的前缀
-				// 不添加换行符，保持前缀关系
-				answer = answer + " " + res
+				// 直接拼接内容，不添加额外空格
+				answer = answer + res
 			}
 			
 			// 使用流式更新API更新卡片内容
