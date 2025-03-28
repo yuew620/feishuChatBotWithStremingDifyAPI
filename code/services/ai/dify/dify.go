@@ -478,10 +478,10 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 	return nil
 }
 
-// addToBufferAndSend 根据时间间隔和是否是最后一条消息决定是否发送内容
+// sendWithRateLimit 根据时间间隔和是否是最后一条消息决定是否发送内容
 func (d *DifyProvider) addToBufferAndSend(content string, responseStream chan string, ctx context.Context) error {
-	d.bufferMu.Lock()
-	defer d.bufferMu.Unlock()
+	d.rateLimitMu.Lock()
+	defer d.rateLimitMu.Unlock()
 	
 	// 检查是否应该发送内容
 	now := time.Now()
@@ -509,27 +509,6 @@ func (d *DifyProvider) addToBufferAndSend(content string, responseStream chan st
 		}
 	} else {
 		log.Printf("Skipping content due to rate limiting: %s", content)
-	}
-	
-	return nil
-}
-
-// flushBuffer 发送缓冲区中剩余的内容
-func (d *DifyProvider) flushBuffer(responseStream chan string) error {
-	d.bufferMu.Lock()
-	defer d.bufferMu.Unlock()
-	
-	// 如果缓冲区有内容，发送出去
-	if d.buffer != "" {
-		log.Printf("Flushing buffer content to response stream: %s", d.buffer)
-		select {
-		case responseStream <- d.buffer:
-			// 发送成功，清空缓冲区并更新最后发送时间
-			d.buffer = ""
-			d.lastSendTime = time.Now()
-		default:
-			return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
-		}
 	}
 	
 	return nil
