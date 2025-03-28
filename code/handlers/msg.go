@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 )
@@ -365,112 +366,70 @@ type CardInfo struct {
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
 	log.Printf("Attempting to update card: cardId=%s, elementId=%s, contentLength=%d", cardId, elementId, len(content))
 	
-	// 获取tenant_access_token
-	token, err := getTenantAccessToken(ctx)
-	if err != nil {
-		log.Printf("Failed to get tenant_access_token: %v", err)
-		return fmt.Errorf("failed to get tenant_access_token: %w", err)
-	}
+	// 使用SDK更新卡片内容
+	client := initialization.GetLarkClient()
 	
-	// 构建请求体
+	// 获取序列号和UUID
 	sequence := getNextSequence()
 	reqUuid := uuid.New().String()
-	reqBody := map[string]interface{}{
-		"content":  content,
-		"sequence": sequence,
-		"uuid":     reqUuid,
+	
+	// 创建请求对象
+	req := larkcardkit.NewContentCardElementReqBuilder().
+		CardId(cardId).
+		ElementId(elementId).
+		Body(larkcardkit.NewContentCardElementReqBodyBuilder().
+			Uuid(reqUuid).
+			Content(content).
+			Sequence(sequence).
+			Build()).
+		Build()
+	
+	// 发起请求
+	resp, err := client.Cardkit.V1.CardElement.Content(ctx, req)
+	if err != nil {
+		log.Printf("Failed to update card content: %v", err)
+		return fmt.Errorf("failed to update card content: %w", err)
 	}
 	
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		log.Printf("Failed to marshal request body: %v", err)
-		return fmt.Errorf("failed to marshal request body: %w", err)
+	// 检查响应
+	if !resp.Success() {
+		log.Printf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
-
-	// 构建请求URL - 使用正确的API路径
-	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/elements/%s/content", cardId, elementId)
-	log.Printf("Making request to URL: %s", url)
-	log.Printf("Request body: sequence=%d, uuid=%s, contentLength=%d", sequence, reqUuid, len(content))
 	
-	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		log.Printf("Failed to create request: %v", err)
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// 设置请求头
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	// 发送请求
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("Failed to send request: %v", err)
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("API error: status=%d, body=%s", resp.StatusCode, string(body))
-		return fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
-	}
-
-	// 读取并记录响应
-	respBody, _ := io.ReadAll(resp.Body)
-	log.Printf("Card update successful: status=%d, response=%s", resp.StatusCode, string(respBody))
-	
+	log.Printf("Card update successful")
 	return nil
 }
 
 // 关闭流式更新模式
 func closeStreamingMode(ctx context.Context, cardId string) error {
-	// 获取tenant_access_token
-	token, err := getTenantAccessToken(ctx)
+	// 使用SDK关闭流式更新模式
+	client := initialization.GetLarkClient()
+	
+	// 创建请求对象
+	req := larkcardkit.NewUpdateCardConfigReqBuilder().
+		CardId(cardId).
+		Body(larkcardkit.NewUpdateCardConfigReqBodyBuilder().
+			Config(map[string]interface{}{
+				"streaming_mode": false,
+			}).
+			Build()).
+		Build()
+	
+	// 发起请求
+	resp, err := client.Cardkit.V1.CardConfig.Update(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to get tenant_access_token: %w", err)
+		log.Printf("Failed to close streaming mode: %v", err)
+		return nil // 不返回错误，因为这不是关键操作
 	}
 	
-	// 构建请求体
-	reqBody := map[string]interface{}{
-		"config": map[string]interface{}{
-			"streaming_mode": false,
-		},
+	// 检查响应
+	if !resp.Success() {
+		log.Printf("Failed to close streaming mode: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil // 不返回错误，因为这不是关键操作
 	}
 	
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	// 构建请求URL
-	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/config", cardId)
-	
-	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// 设置请求头
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	// 发送请求
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
-	}
-
+	log.Printf("Successfully closed streaming mode for card: %s", cardId)
 	return nil
 }
 
@@ -1321,29 +1280,18 @@ func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *st
 		return nil, err
 	}
 	
-	// 生成一个短的卡片ID (最大20个字符)
-	shortCardId := generateShortCardId(*messageId)
-	log.Printf("Generated short card ID: %s from message ID: %s", shortCardId, *messageId)
+	// 直接使用消息ID作为卡片ID
+	log.Printf("Using message ID as card ID: %s", *messageId)
 	
 	// 返回卡片信息
 	return &CardInfo{
-		CardEntityId: shortCardId,
+		CardEntityId: *messageId,
 		MessageId:    *messageId,
 		ElementId:    "content_block",
 	}, nil
 }
 
-// 生成短卡片ID (最大20个字符)
-func generateShortCardId(messageId string) string {
-	// 使用消息ID的哈希值生成短ID
-	h := sha256.New()
-	h.Write([]byte(messageId))
-	hash := h.Sum(nil)
-	
-	// 使用base64编码，并截取前20个字符
-	shortId := base64.URLEncoding.EncodeToString(hash)[:20]
-	return shortId
-}
+// 不再需要生成短卡片ID，直接使用消息ID
 
 // 原始的发送处理中卡片方法（作为回退）
 func sendOnProcessCardOriginal(ctx context.Context, sessionId *string, msgId *string) (*string, error) {
