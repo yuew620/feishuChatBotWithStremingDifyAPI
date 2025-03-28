@@ -23,9 +23,9 @@ type conversationEntry struct {
 type DifyClient struct {
 	config *initialization.Config
 	
-	// 会话ID到Dify conversation ID的映射
+	// 用户ID到Dify conversation ID的映射
 	conversationsMu sync.RWMutex
-	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
+	conversations   map[string]conversationEntry // userID -> {conversationId, timestamp}
 }
 
 type Messages struct {
@@ -79,19 +79,19 @@ func NewDifyClient(config *initialization.Config) *DifyClient {
 	return client
 }
 
-// cleanupConversations 清理超过12小时的会话缓存
+// cleanupConversations 清理超过2小时的会话缓存
 func (d *DifyClient) cleanupConversations() {
 	d.conversationsMu.Lock()
 	defer d.conversationsMu.Unlock()
 	
 	now := time.Now()
-	expiredTime := now.Add(-12 * time.Hour) // 12小时过期
+	expiredTime := now.Add(-2 * time.Hour) // 2小时过期
 	
 	// 遍历所有会话，删除过期的
-	for sessionID, entry := range d.conversations {
+	for userID, entry := range d.conversations {
 		if entry.timestamp.Before(expiredTime) {
-			delete(d.conversations, sessionID)
-			log.Printf("Cleaned up expired conversation for session %s", sessionID)
+			delete(d.conversations, userID)
+			log.Printf("Cleaned up expired conversation for user %s", userID)
 		}
 	}
 	
@@ -112,32 +112,6 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		})
 	}
 	
-	// 从最后一条消息中提取会话ID
-	sessionID := ""
-	if lastMsg.Metadata != nil {
-		if id, ok := lastMsg.Metadata["session_id"]; ok && id != "" {
-			sessionID = id
-			log.Printf("Found session_id from metadata: %s", sessionID)
-		}
-	}
-	
-	// 如果没有找到session_id，记录日志
-	if sessionID == "" {
-		log.Printf("No session_id found in message metadata")
-	}
-	
-	// 检查是否有缓存的conversation_id
-	conversationID := ""
-	if sessionID != "" {
-		// 从缓存中获取conversation_id
-		d.conversationsMu.RLock()
-		if entry, ok := d.conversations[sessionID]; ok {
-			conversationID = entry.conversationID
-			log.Printf("Using cached conversation_id for session %s: %s", sessionID, conversationID)
-		}
-		d.conversationsMu.RUnlock()
-	}
-	
 	// 从最后一条消息中提取用户ID
 	userID := "feishu-bot" // 默认值
 	if lastMsg.Metadata != nil {
@@ -145,6 +119,18 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 			userID = id
 			log.Printf("Using user_id from metadata: %s", userID)
 		}
+	}
+	
+	// 检查是否有缓存的conversation_id
+	conversationID := ""
+	if userID != "" {
+		// 从缓存中获取conversation_id
+		d.conversationsMu.RLock()
+		if entry, ok := d.conversations[userID]; ok {
+			conversationID = entry.conversationID
+			log.Printf("Using cached conversation_id for user %s: %s", userID, conversationID)
+		}
+		d.conversationsMu.RUnlock()
 	}
 
 	reqBody := StreamRequest{
@@ -238,7 +224,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		}
 		
 		// 提取conversation_id并存储到缓存中
-		if sessionID != "" {
+		if userID != "" {
 			// 首先检查响应中是否包含conversation_id
 			respConversationID := streamResp.ConversationId
 			if respConversationID == "" {
@@ -248,12 +234,12 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 			// 如果找到了conversation_id，存储到缓存中
 			if respConversationID != "" && respConversationID != conversationID {
 				d.conversationsMu.Lock()
-				d.conversations[sessionID] = conversationEntry{
+				d.conversations[userID] = conversationEntry{
 					conversationID: respConversationID,
 					timestamp:      time.Now(),
 				}
 				d.conversationsMu.Unlock()
-				log.Printf("Stored conversation_id %s for session %s", respConversationID, sessionID)
+				log.Printf("Stored conversation_id %s for user %s", respConversationID, userID)
 				
 				// 更新当前使用的conversation_id
 				conversationID = respConversationID
