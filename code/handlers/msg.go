@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -380,7 +379,7 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 		Body(larkcardkit.NewContentCardElementReqBodyBuilder().
 			Uuid(reqUuid).
 			Content(content).
-			Sequence(sequence).
+			Sequence(int(sequence)). // 将int64转换为int
 			Build()).
 		Build()
 	
@@ -403,29 +402,53 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 
 // 关闭流式更新模式
 func closeStreamingMode(ctx context.Context, cardId string) error {
-	// 使用SDK关闭流式更新模式
-	client := initialization.GetLarkClient()
-	
-	// 创建请求对象
-	req := larkcardkit.NewUpdateCardConfigReqBuilder().
-		CardId(cardId).
-		Body(larkcardkit.NewUpdateCardConfigReqBodyBuilder().
-			Config(map[string]interface{}{
-				"streaming_mode": false,
-			}).
-			Build()).
-		Build()
-	
-	// 发起请求
-	resp, err := client.Cardkit.V1.CardConfig.Update(ctx, req)
+	// 获取tenant_access_token
+	token, err := getTenantAccessToken(ctx)
 	if err != nil {
-		log.Printf("Failed to close streaming mode: %v", err)
+		log.Printf("Warning: Failed to get token for closing streaming mode: %v", err)
 		return nil // 不返回错误，因为这不是关键操作
 	}
 	
-	// 检查响应
-	if !resp.Success() {
-		log.Printf("Failed to close streaming mode: code=%d, msg=%s", resp.Code, resp.Msg)
+	// 构建请求体
+	reqBody := map[string]interface{}{
+		"config": map[string]interface{}{
+			"streaming_mode": false,
+		},
+	}
+	
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Printf("Warning: Failed to marshal request body for closing streaming mode: %v", err)
+		return nil // 不返回错误，因为这不是关键操作
+	}
+
+	// 构建请求URL
+	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/config", cardId)
+	log.Printf("Making request to close streaming mode: %s", url)
+	
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		log.Printf("Warning: Failed to create request for closing streaming mode: %v", err)
+		return nil // 不返回错误，因为这不是关键操作
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Warning: Failed to send request for closing streaming mode: %v", err)
+		return nil // 不返回错误，因为这不是关键操作
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Warning: Failed to close streaming mode: API error: status=%d, body=%s", resp.StatusCode, string(body))
 		return nil // 不返回错误，因为这不是关键操作
 	}
 	
@@ -1290,8 +1313,6 @@ func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *st
 		ElementId:    "content_block",
 	}, nil
 }
-
-// 不再需要生成短卡片ID，直接使用消息ID
 
 // 原始的发送处理中卡片方法（作为回退）
 func sendOnProcessCardOriginal(ctx context.Context, sessionId *string, msgId *string) (*string, error) {
