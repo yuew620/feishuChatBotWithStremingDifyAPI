@@ -1,20 +1,25 @@
-FROM golang:1.18 as golang
-
-ENV GO111MODULE=on \
-    CGO_ENABLED=1 \
-    GOPROXY=https://goproxy.cn,direct
+FROM golang:1.20-alpine AS builder
 
 WORKDIR /build
-ADD /code /build
+COPY code/ .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags '-w -s' -o feishu_chatgpt
+# 安装必要的构建工具
+RUN apk add --no-cache gcc musl-dev
+
+# 下载依赖并构建
+RUN go mod download
+RUN CGO_ENABLED=0 GOOS=linux go build -o feishu-bot
 
 FROM alpine:latest
 
 WORKDIR /app
+COPY --from=builder /build/feishu-bot .
 
-RUN apk add --no-cache bash
-COPY --from=golang /build/feishu_chatgpt /app
-COPY --from=golang /build/role_list.yaml /app
+# 安装必要的运行时依赖
+RUN apk --no-cache add ca-certificates tzdata curl
+
+# 创建日志目录
+RUN mkdir logs
+
 EXPOSE 9000
-ENTRYPOINT ["/app/feishu_chatgpt"]
+CMD ["./feishu-bot"]
