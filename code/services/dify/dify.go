@@ -21,9 +21,11 @@ type Messages struct {
 }
 
 type StreamRequest struct {
-	Query    string     `json:"query"`
-	Messages []Messages `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Inputs          map[string]string `json:"inputs"`
+	Query           string            `json:"query"`
+	ResponseMode    string            `json:"response_mode"`
+	ConversationId  string            `json:"conversation_id"`
+	User            string            `json:"user"`
 }
 
 type StreamResponse struct {
@@ -45,15 +47,26 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	historicalMessages := messages[:len(messages)-1]
 	
 	reqBody := StreamRequest{
-		Query:    lastMsg.Content,
-		Messages: historicalMessages,
-		Stream:   true,
+		Inputs:          map[string]string{},
+		Query:           lastMsg.Content,
+		ResponseMode:    "streaming",
+		ConversationId:  "",
+		User:            "feishu-bot",
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("error marshaling request: %v", err)
 	}
+
+	// 打印请求详情
+	fmt.Printf("Sending request to Dify:\nURL: %s\nHeaders: %v\nBody: %s\n", 
+		fmt.Sprintf("%s/v1/chat-messages", d.config.DifyApiUrl),
+		map[string]string{
+			"Content-Type": "application/json",
+			"Authorization": fmt.Sprintf("Bearer %s", d.config.DifyApiKey),
+		},
+		string(jsonBody))
 
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "POST", 
@@ -74,6 +87,17 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		return fmt.Errorf("error sending request: %v", err)
 	}
 	defer resp.Body.Close()
+
+	// 打印响应状态码和头部
+	fmt.Printf("Dify response:\nStatus: %s\nHeaders: %v\n", 
+		resp.Status, 
+		resp.Header)
+
+	// 如果状态码不是200，读取并打印错误响应
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
 
 	// 处理流式响应
 	reader := bufio.NewReader(resp.Body)
