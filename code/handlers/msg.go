@@ -171,12 +171,6 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 	// 构建卡片JSON 2.0结构，严格按照飞书官方文档
 	cardJSON := map[string]interface{}{
 		"schema": "2.0",
-		"header": map[string]interface{}{
-			"title": map[string]interface{}{
-				"content": "AI回复",
-				"tag": "plain_text",
-			},
-		},
 		"config": map[string]interface{}{
 			"streaming_mode": true,
 			"summary": map[string]interface{}{
@@ -1333,12 +1327,6 @@ func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *st
 	// 创建符合飞书卡片规范的JSON
 	cardJSON := map[string]interface{}{
 		"schema": "2.0",
-		"header": map[string]interface{}{
-			"title": map[string]interface{}{
-				"content": "AI回复",
-				"tag": "plain_text",
-			},
-		},
 		"config": map[string]interface{}{
 			"streaming_mode": true,
 			"summary": map[string]interface{}{

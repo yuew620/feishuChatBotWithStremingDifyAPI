@@ -151,8 +151,8 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 					log.Printf("Failed to update card: %v", err)
 				}
 				
-				// 添加小延迟，让打字机效果更明显
-				time.Sleep(100 * time.Millisecond)
+				// 添加小延迟，让打字机效果更明显但保持较快的响应速度
+				time.Sleep(10 * time.Millisecond)
 			}
 			m.mu.Unlock()
 
