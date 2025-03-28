@@ -353,14 +353,15 @@ func sendCardEntity(ctx context.Context, cardID string, receiveID string) (strin
 	return result.Data.MessageID, nil
 }
 
+// 卡片信息结构体
+type CardInfo struct {
+	CardEntityId string // 卡片实体ID
+	MessageId    string // 消息ID
+	ElementId    string // 元素ID
+}
+
 // 流式更新文本内容
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
-	// 确保cardId不超过20个字符（飞书API限制）
-	if len(cardId) > 20 {
-		log.Printf("Warning: card_id length exceeds 20 characters, truncating: %s", cardId)
-		cardId = cardId[:20]
-	}
-	
 	// 获取tenant_access_token
 	token, err := getTenantAccessToken(ctx)
 	if err != nil {
@@ -369,9 +370,58 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 	
 	// 构建请求体
 	reqBody := map[string]interface{}{
-		"uuid":     uuid.New().String(), // 使用UUID保证幂等性
 		"content":  content,
 		"sequence": getNextSequence(), // 使用原子计数器获取序列号
+		"uuid":     uuid.New().String(), // 使用UUID保证幂等性
+	}
+	
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	// 构建请求URL - 使用正确的API路径
+	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/elements/%s/content", cardId, elementId)
+	
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// 关闭流式更新模式
+func closeStreamingMode(ctx context.Context, cardId string) error {
+	// 获取tenant_access_token
+	token, err := getTenantAccessToken(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant_access_token: %w", err)
+	}
+	
+	// 构建请求体
+	reqBody := map[string]interface{}{
+		"config": map[string]interface{}{
+			"streaming_mode": false,
+		},
 	}
 	
 	jsonBody, err := json.Marshal(reqBody)
@@ -380,7 +430,7 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 	}
 
 	// 构建请求URL
-	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/elements/%s/content", cardId, elementId)
+	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/config", cardId)
 	
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
@@ -1000,9 +1050,9 @@ func sendImageCard(ctx context.Context, imageKey string, msgId *string, sessionI
 }
 
 // 更新卡片文本内容
-func updateTextCard(ctx context.Context, msg string, cardId *string) error {
-	// 使用流式更新API
-	err := streamUpdateText(ctx, *cardId, "content_block", msg)
+func updateTextCard(ctx context.Context, msg string, cardInfo *CardInfo) error {
+	// 使用卡片实体ID和元素ID更新卡片内容
+	err := streamUpdateText(ctx, cardInfo.CardEntityId, cardInfo.ElementId, msg)
 	if err != nil {
 		return fmt.Errorf("failed to stream update text: %w", err)
 	}
@@ -1010,12 +1060,20 @@ func updateTextCard(ctx context.Context, msg string, cardId *string) error {
 }
 
 // 更新最终卡片
-func updateFinalCard(ctx context.Context, msg string, cardId *string) error {
-	// 使用流式更新API
-	err := streamUpdateText(ctx, *cardId, "content_block", msg)
+func updateFinalCard(ctx context.Context, msg string, cardInfo *CardInfo) error {
+	// 使用卡片实体ID和元素ID更新卡片内容
+	err := streamUpdateText(ctx, cardInfo.CardEntityId, cardInfo.ElementId, msg)
 	if err != nil {
 		return fmt.Errorf("failed to update final card: %w", err)
 	}
+	
+	// 可选：关闭流式更新模式
+	err = closeStreamingMode(ctx, cardInfo.CardEntityId)
+	if err != nil {
+		log.Printf("Failed to close streaming mode: %v", err)
+		// 不返回错误，因为这不是关键操作
+	}
+	
 	return nil
 }
 
@@ -1179,24 +1237,77 @@ func createSimpleCard(content string) (string, error) {
 	return string(jsonBytes), nil
 }
 
+// 获取聊天ID
+func getChatIdFromMsgId(ctx context.Context, msgId *string) string {
+	client := initialization.GetLarkClient()
+	resp, err := client.Im.Message.Get(ctx, larkim.NewGetMessageReqBuilder().
+		MessageId(*msgId).
+		Build())
+	
+	if err != nil || !resp.Success() {
+		log.Printf("Failed to get message: %v", err)
+		return ""
+	}
+	
+	return *resp.Data.Message.ChatId
+}
+
 // 发送处理中卡片
-func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*string, error) {
+func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
 	content := "正在思考中，请稍等..."
 	
-	// 使用简化的卡片创建流程
-	card, err := createSimpleCard(content)
+	// 步骤1：创建卡片实体
+	cardEntityId, err := createCardEntity(ctx, content)
 	if err != nil {
+		log.Printf("Failed to create card entity: %v", err)
 		// 回退到原始方法
-		log.Printf("Failed to create simple card: %v, falling back to original method", err)
-		return sendOnProcessCardOriginal(ctx, sessionId, msgId)
+		messageId, err := sendOnProcessCardOriginal(ctx, sessionId, msgId)
+		if err != nil {
+			return nil, err
+		}
+		return &CardInfo{
+			CardEntityId: *messageId, // 注意：这不是真正的卡片实体ID
+			MessageId:    *messageId,
+			ElementId:    "content_block",
+		}, nil
 	}
 	
-	cardId, err := replyCardWithBackId(ctx, msgId, card)
+	// 步骤2：发送卡片实体
+	chatId := getChatIdFromMsgId(ctx, msgId)
+	if chatId == "" {
+		log.Printf("Failed to get chat_id, falling back to original method")
+		messageId, err := sendOnProcessCardOriginal(ctx, sessionId, msgId)
+		if err != nil {
+			return nil, err
+		}
+		return &CardInfo{
+			CardEntityId: *messageId, // 注意：这不是真正的卡片实体ID
+			MessageId:    *messageId,
+			ElementId:    "content_block",
+		}, nil
+	}
+	
+	messageId, err := sendCardEntity(ctx, cardEntityId, chatId)
 	if err != nil {
-		return nil, err
+		log.Printf("Failed to send card entity: %v", err)
+		// 回退到原始方法
+		messageId, err := sendOnProcessCardOriginal(ctx, sessionId, msgId)
+		if err != nil {
+			return nil, err
+		}
+		return &CardInfo{
+			CardEntityId: *messageId, // 注意：这不是真正的卡片实体ID
+			MessageId:    *messageId,
+			ElementId:    "content_block",
+		}, nil
 	}
 	
-	return cardId, nil
+	// 返回卡片信息，包含卡片实体ID和消息ID
+	return &CardInfo{
+		CardEntityId: cardEntityId,
+		MessageId:    messageId,
+		ElementId:    "content_block",
+	}, nil
 }
 
 // 原始的发送处理中卡片方法（作为回退）

@@ -65,7 +65,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
 	// 发送处理中卡片
-	cardId, err := sendOnProcess(a)
+	cardInfo, err := sendOnProcess(a)
 	if err != nil {
 		log.Printf("Failed to send processing card: %v", err)
 		return false
@@ -114,13 +114,13 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			if err != nil {
 				errorMsg = fmt.Sprintf("错误: %v", err)
 			}
-			_ = updateFinalCard(ctx, errorMsg, cardId)
+			_ = updateFinalCard(ctx, errorMsg, cardInfo)
 			return false
 
 		case res, ok := <-chatResponseStream:
 			if !ok {
 				// 流结束，保存会话并更新最终卡片
-				return m.handleCompletion(ctx, a, cardId, answer, aiMessages)
+				return m.handleCompletion(ctx, a, cardInfo, answer, aiMessages)
 			}
 			noContentTimeout.Stop()
 			
@@ -143,7 +143,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 				log.Printf("Updating card with new content: %s", res)
 				
 				// 直接在主线程中更新，确保顺序正确
-				if err := streamUpdateText(ctx, *cardId, "content_block", currentAnswer); err != nil {
+				if err := updateTextCard(ctx, currentAnswer, cardInfo); err != nil {
 					log.Printf("Failed to update card: %v", err)
 				}
 				
@@ -153,15 +153,15 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			m.mu.Unlock()
 
 		case <-ctx.Done():
-			_ = updateFinalCard(ctx, "请求超时", cardId)
+			_ = updateFinalCard(ctx, "请求超时", cardInfo)
 			return false
 		}
 	}
 }
 
-func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, cardId *string, answer string, aiMessages []ai.Message) bool {
+func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, cardInfo *CardInfo, answer string, aiMessages []ai.Message) bool {
 	// 更新最终卡片
-	if err := streamUpdateText(ctx, *cardId, "content_block", answer); err != nil {
+	if err := updateFinalCard(ctx, answer, cardInfo); err != nil {
 		log.Printf("Failed to update final card: %v", err)
 		return false
 	}
@@ -200,10 +200,10 @@ func printErrorMessage(a *ActionInfo, msg []ai.Message, err error) {
 	log.Printf("Failed request: UserId: %s , Request: %s , Err: %s", a.info.userId, msg, err)
 }
 
-func sendOnProcess(a *ActionInfo) (*string, error) {
-	cardId, err := sendOnProcessCard(*a.ctx, a.info.sessionId, a.info.msgId)
+func sendOnProcess(a *ActionInfo) (*CardInfo, error) {
+	cardInfo, err := sendOnProcessCard(*a.ctx, a.info.sessionId, a.info.msgId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send processing card: %w", err)
 	}
-	return cardId, nil
+	return cardInfo, nil
 }
