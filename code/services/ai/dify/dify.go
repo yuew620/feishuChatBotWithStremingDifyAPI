@@ -87,19 +87,19 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 	return provider
 }
 
-// cleanupConversations 清理超过12小时的会话缓存
+// cleanupConversations 清理超过2小时的会话缓存
 func (d *DifyProvider) cleanupConversations() {
 	d.conversationsMu.Lock()
 	defer d.conversationsMu.Unlock()
 	
 	now := time.Now()
-	expiredTime := now.Add(-12 * time.Hour) // 12小时过期
+	expiredTime := now.Add(-2 * time.Hour) // 2小时过期
 	
 	// 遍历所有会话，删除过期的
-	for sessionID, entry := range d.conversations {
+	for userID, entry := range d.conversations {
 		if entry.timestamp.Before(expiredTime) {
-			delete(d.conversations, sessionID)
-			log.Printf("Cleaned up expired conversation for session %s", sessionID)
+			delete(d.conversations, userID)
+			log.Printf("Cleaned up expired conversation for user %s", userID)
 		}
 	}
 	
@@ -142,33 +142,6 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		historyStr = "[]"  // Empty array for no history
 	}
 
-	// 从最后一条消息中提取会话ID
-	sessionID := ""
-	if lastMsg.Metadata != nil {
-		if id, ok := lastMsg.Metadata["session_id"]; ok && id != "" {
-			sessionID = id
-		}
-	}
-	
-	// 如果没有找到session_id，记录日志
-	if sessionID == "" {
-		log.Printf("No session_id found in message metadata")
-	} else {
-		log.Printf("Found session_id from metadata: %s", sessionID)
-	}
-	
-	// 检查是否有缓存的conversation_id
-	conversationID := ""
-	if sessionID != "" {
-		// 从缓存中获取conversation_id
-		d.conversationsMu.RLock()
-		if entry, ok := d.conversations[sessionID]; ok {
-			conversationID = entry.conversationID
-			log.Printf("Using cached conversation_id for session %s: %s", sessionID, conversationID)
-		}
-		d.conversationsMu.RUnlock()
-	}
-	
 	// 从最后一条消息中提取用户ID
 	userID := "feishu-bot" // 默认值
 	if lastMsg.Metadata != nil {
@@ -176,6 +149,18 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 			userID = id
 			log.Printf("Using user_id from metadata: %s", userID)
 		}
+	}
+	
+	// 检查是否有缓存的conversation_id
+	conversationID := ""
+	if userID != "" {
+		// 从缓存中获取conversation_id
+		d.conversationsMu.RLock()
+		if entry, ok := d.conversations[userID]; ok {
+			conversationID = entry.conversationID
+			log.Printf("Using cached conversation_id for user %s: %s", userID, conversationID)
+		}
+		d.conversationsMu.RUnlock()
 	}
 	
 	reqBody := streamRequest{
@@ -200,8 +185,8 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 			log.Printf("Retrying request (attempt %d/%d)", retry+1, d.config.GetMaxRetries())
 		}
 
-		// 创建一个新的上下文，包含会话ID
-		ctxWithSessionID := context.WithValue(ctx, "sessionID", sessionID)
+		// 创建一个新的上下文，包含用户ID
+		ctxWithSessionID := context.WithValue(ctx, "userID", userID)
 		err := d.doStreamRequest(ctxWithSessionID, reqBody, responseStream)
 		if err == nil {
 			return nil
@@ -365,8 +350,8 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 }
 
 func (d *DifyProvider) processSSELine(line string, responseStream chan string, ctx context.Context) error {
-	// 从上下文中提取会话ID，用于存储conversation_id
-	sessionID, _ := ctx.Value("sessionID").(string)
+	// 从上下文中提取用户ID，用于存储conversation_id
+	userID, _ := ctx.Value("userID").(string)
 	if !strings.HasPrefix(line, "data: ") {
 		// 不是数据行，可能是注释或心跳
 		return nil
@@ -397,7 +382,7 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 	}
 	
 	// 提取conversation_id并存储到缓存中
-	if sessionID != "" {
+	if userID != "" {
 		// 首先检查响应中是否包含conversation_id
 		conversationID := streamResp.ConversationId
 		if conversationID == "" {
@@ -407,12 +392,12 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 		// 如果找到了conversation_id，存储到缓存中
 		if conversationID != "" {
 			d.conversationsMu.Lock()
-			d.conversations[sessionID] = conversationEntry{
+			d.conversations[userID] = conversationEntry{
 				conversationID: conversationID,
 				timestamp:      time.Now(),
 			}
 			d.conversationsMu.Unlock()
-			log.Printf("Stored conversation_id %s for session %s", conversationID, sessionID)
+			log.Printf("Stored conversation_id %s for user %s", conversationID, userID)
 		}
 	}
 
