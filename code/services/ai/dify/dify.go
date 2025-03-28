@@ -28,6 +28,11 @@ type DifyProvider struct {
 	// 会话ID到Dify conversation ID的映射
 	conversationsMu sync.RWMutex
 	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
+	
+	// 用于累积内容的缓冲区
+	bufferMu      sync.Mutex
+	buffer        string
+	lastSendTime  time.Time
 }
 
 // Dify API请求结构
@@ -73,6 +78,8 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 		},
 		sentContent: make(map[string]bool),
 		conversations: make(map[string]conversationEntry),
+		buffer: "",
+		lastSendTime: time.Now(),
 	}
 	
 	// 启动一个后台goroutine，定期清理过期的会话缓存
@@ -425,12 +432,12 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			if d.sentContent[content] {
 				log.Printf("Skipping duplicate content: %s", content)
 			} else {
-				log.Printf("Sending new content to response stream: %s", content)
+				log.Printf("Adding content to buffer: %s", content)
 				d.sentContent[content] = true
-				select {
-				case responseStream <- content:
-				default:
-					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+				
+				// 使用缓冲区累积内容并定期发送
+				if err := d.addToBufferAndSend(content, responseStream, ctx); err != nil {
+					return err
 				}
 			}
 		}
@@ -469,6 +476,38 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 		return nil // 不中断流处理
 	}
 
+	return nil
+}
+
+// addToBufferAndSend 将内容添加到缓冲区，并在适当的时候发送到响应流
+func (d *DifyProvider) addToBufferAndSend(content string, responseStream chan string, ctx context.Context) error {
+	d.bufferMu.Lock()
+	defer d.bufferMu.Unlock()
+	
+	// 添加内容到缓冲区
+	if d.buffer == "" {
+		d.buffer = content
+	} else {
+		d.buffer = d.buffer + content
+	}
+	
+	// 检查是否应该发送缓冲区内容
+	now := time.Now()
+	if now.Sub(d.lastSendTime) >= 20*time.Millisecond {
+		// 已经过了20ms，发送缓冲区内容
+		if d.buffer != "" {
+			log.Printf("Sending buffered content to response stream: %s", d.buffer)
+			select {
+			case responseStream <- d.buffer:
+				// 发送成功，清空缓冲区并更新最后发送时间
+				d.buffer = ""
+				d.lastSendTime = now
+			default:
+				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+			}
+		}
+	}
+	
 	return nil
 }
 
