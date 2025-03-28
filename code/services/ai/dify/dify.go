@@ -3,10 +3,8 @@ package dify
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"log"
 	"net/http"
@@ -214,7 +212,7 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 			log.Printf("Conversation not found, retrying without conversation_id")
 			// 清除conversation_id并重试
 			reqBody.ConversationId = ""
-			err = d.doStreamRequest(ctx, reqBody, responseStream)
+			err = d.doStreamRequest(ctxWithSessionID, reqBody, responseStream)
 			if err == nil {
 				return nil
 			}
@@ -257,8 +255,6 @@ func (d *DifyProvider) validateMessages(messages []ai.Message) error {
 }
 
 func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamRequest, responseStream chan string) error {
-	// 从上下文中提取会话ID，用于存储conversation_id
-	sessionID, _ := ctx.Value("sessionID").(string)
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return ai.NewError(ai.ErrInvalidMessage, "error marshaling request", err)
