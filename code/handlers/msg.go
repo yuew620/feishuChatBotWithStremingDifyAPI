@@ -355,6 +355,12 @@ func sendCardEntity(ctx context.Context, cardID string, receiveID string) (strin
 
 // 流式更新文本内容
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
+	// 确保cardId不超过20个字符（飞书API限制）
+	if len(cardId) > 20 {
+		log.Printf("Warning: card_id length exceeds 20 characters, truncating: %s", cardId)
+		cardId = cardId[:20]
+	}
+	
 	// 获取tenant_access_token
 	token, err := getTenantAccessToken(ctx)
 	if err != nil {
