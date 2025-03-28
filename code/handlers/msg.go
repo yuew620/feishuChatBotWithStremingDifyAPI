@@ -1275,31 +1275,90 @@ func createSimpleCard(content string) (string, error) {
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
 	log.Printf("Sending processing card for message ID: %s", *msgId)
 	
+	// 步骤一：创建卡片实体
+	content := "正在思考中，请稍等..."
+	cardEntityId, err := createCardEntity(ctx, content)
+	if err != nil {
+		log.Printf("Failed to create card entity: %v", err)
+		return nil, fmt.Errorf("failed to create card entity: %w", err)
+	}
+	
+	// 获取聊天ID
+	client := initialization.GetLarkClient()
+	resp, err := client.Im.Message.Get(ctx, larkim.NewGetMessageReqBuilder().
+		MessageId(*msgId).
+		Build())
+	
+	if err != nil || !resp.Success() {
+		log.Printf("Failed to get message info: %v", err)
+		// 回退到使用SDK回复消息
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	chatId := resp.Data.Message.ChatId
+	if chatId == "" {
+		log.Printf("Failed to get chat ID from message")
+		// 回退到使用SDK回复消息
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	// 步骤二：发送卡片实体
+	messageId, err := sendCardEntity(ctx, cardEntityId, chatId)
+	if err != nil {
+		log.Printf("Failed to send card entity: %v", err)
+		// 回退到使用SDK回复消息
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	log.Printf("Successfully created and sent card entity: cardId=%s, messageId=%s", cardEntityId, messageId)
+	
+	// 返回卡片信息
+	return &CardInfo{
+		CardEntityId: cardEntityId,
+		MessageId:    messageId,
+		ElementId:    "content_block",
+	}, nil
+}
+
+// 回退方法，使用SDK直接回复消息
+func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
+	log.Printf("Using fallback method for sending processing card")
+	
 	// 创建一个简单的卡片内容
 	content := "正在思考中，请稍等..."
 	
-	// 创建卡片JSON
+	// 创建符合飞书卡片规范的JSON
 	cardJSON := map[string]interface{}{
-		"elements": []map[string]interface{}{
-			{
-				"tag": "markdown",
-				"content": content,
-				"text_align": "left",
-				"element_id": "content_block",
-			},
-			{
-				"tag": "note",
-				"elements": []map[string]interface{}{
-					{
-						"tag": "plain_text",
-						"content": "正在处理中，请稍等...",
-					},
-				},
+		"schema": "2.0",
+		"header": map[string]interface{}{
+			"title": map[string]interface{}{
+				"content": "AI回复",
+				"tag": "plain_text",
 			},
 		},
 		"config": map[string]interface{}{
 			"streaming_mode": true,
-			"update_multi": true,
+			"summary": map[string]interface{}{
+				"content": "[生成中]",
+			},
+		},
+		"body": map[string]interface{}{
+			"elements": []map[string]interface{}{
+				{
+					"tag": "markdown",
+					"content": content,
+					"element_id": "content_block",
+				},
+				{
+					"tag": "note",
+					"elements": []map[string]interface{}{
+						{
+							"tag": "plain_text",
+							"content": "正在处理中，请稍等...",
+						},
+					},
+				},
+			},
 		},
 	}
 	
@@ -1332,9 +1391,9 @@ func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*
 	}
 	
 	messageId := resp.Data.MessageId
-	log.Printf("Successfully sent card, message ID: %s", *messageId)
+	log.Printf("Successfully sent card using fallback method, message ID: %s", *messageId)
 	
-	// 返回卡片信息
+	// 在回退方法中，我们使用消息ID作为卡片ID
 	return &CardInfo{
 		CardEntityId: *messageId,
 		MessageId:    *messageId,
