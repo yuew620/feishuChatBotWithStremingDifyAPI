@@ -1209,25 +1209,4 @@ func sendOnProcessCardOriginal(ctx context.Context, sessionId *string, msgId *st
 	return cardId, nil
 }
 
-// 处理消息内容
-func processMessage(msg string) (string, error) {
-	if len(msg) == 0 {
-		return "", fmt.Errorf("empty message")
-	}
-	// 这里可以添加其他消息处理逻辑
-	return msg, nil
-}
-
-// 清理文本块
-func cleanTextBlock(msg string) string {
-	// 移除多余的空白字符
-	msg = strings.TrimSpace(msg)
-	// 这里可以添加其他文本清理逻辑
-	return msg
-}
-
-// 处理换行符
-func processNewLine(msg string) string {
-	// 将\n转换为实际的换行符
-	return strings.ReplaceAll(msg, "\\n", "\n")
-}
+// 这些函数已在 common.go 中定义，不需要重复定义
