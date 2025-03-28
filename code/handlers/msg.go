@@ -1268,19 +1268,6 @@ func createSimpleCard(content string) (string, error) {
 	return string(jsonBytes), nil
 }
 
-// 获取聊天ID
-func getChatIdFromMsgId(ctx context.Context, msgId *string) string {
-	// 直接从消息ID中提取聊天ID
-	// 由于飞书API限制，我们无法直接通过消息ID获取聊天ID
-	// 因此我们使用一个替代方案：从ActionInfo中获取chatId
-	
-	// 如果msgId是回复消息，格式可能是"om_xxx"
-	// 我们可以尝试从消息ID中提取信息
-	
-	// 这里我们简单地返回一个空字符串，让调用者处理这种情况
-	// 在实际使用中，我们会回退到原始方法
-	return ""
-}
 
 // 发送处理中卡片
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
