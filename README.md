@@ -408,7 +408,7 @@ tail -f logs/app.log
 测试方法：
 ```bash
 # 测试URL验证（已验证可用）
-curl -X POST https://your-domain:9000/webhook/event \
+curl -X POST http://your-domain:9000/webhook/event \
   -H "Content-Type: application/json" \
   -H "X-Lark-Request-Type: URL_VERIFICATION" \
   -d '{"challenge": "test123", "token": "test", "type": "url_verification"}'
