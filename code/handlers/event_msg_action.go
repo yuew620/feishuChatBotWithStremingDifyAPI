@@ -30,7 +30,8 @@ func NewMessageAction(provider ai.Provider) *MessageAction {
 
 func (m *MessageAction) Execute(a *ActionInfo) bool {
 	startTime := time.Now()
-	log.Printf("[Timing] Message processing started at: %v", startTime.Format("2006-01-02 15:04:05.000"))
+	log.Printf("[Timing] ===== 新消息处理开始 =====")
+	log.Printf("[Timing] 1. 收到用户消息时间: %v", startTime.Format("2006-01-02 15:04:05.000"))
 	
 	// 检查会话是否已经在处理中
 	m.activeSessionsMu.Lock()
@@ -69,12 +70,15 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 	// 发送处理中卡片
 	cardCreateStart := time.Now()
+	log.Printf("[Timing] 2. 开始创建卡片: %v", cardCreateStart.Format("2006-01-02 15:04:05.000"))
 	cardInfo, err := sendOnProcess(a)
 	if err != nil {
 		log.Printf("Failed to send processing card: %v", err)
 		return false
 	}
-	log.Printf("[Timing] Card creation took: %v ms", time.Since(cardCreateStart).Milliseconds())
+	cardCreateEnd := time.Now()
+	log.Printf("[Timing] 3. 卡片创建完成: %v", cardCreateEnd.Format("2006-01-02 15:04:05.000"))
+	log.Printf("[Timing] 卡片创建总耗时: %v ms", time.Since(cardCreateStart).Milliseconds())
 
 	// 从会话缓存中获取历史消息
 	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)

@@ -23,6 +23,7 @@ import (
 
 	"start-feishubot/handlers"
 	"start-feishubot/initialization"
+	"start-feishubot/services"
 	"start-feishubot/utils"
 )
 
@@ -46,6 +47,12 @@ func main() {
 
 	// 初始化飞书客户端
 	initialization.LoadLarkClient(*initialization.GetConfig())
+	
+	// 初始化卡片池
+	if err := initCardPool(context.Background()); err != nil {
+		log.Printf("Warning: Failed to initialize card pool: %v", err)
+		// 继续执行，不致命错误
+	}
 	
 	// 初始化handlers
 	if err := handlers.InitHandlers(*initialization.GetConfig()); err != nil {
@@ -149,6 +156,11 @@ func main() {
 	if err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func initCardPool(ctx context.Context) error {
+	// 使用createCardEntity函数初始化卡片池
+	return services.InitCardPool(ctx, handlers.CreateCardEntity, "正在思考中，请稍等...")
 }
 
 func enableLog() *lumberjack.Logger {
