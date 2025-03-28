@@ -30,10 +30,9 @@ type DifyProvider struct {
 	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
 	
 	// 用于累积内容的缓冲区
-	bufferMu         sync.Mutex
-	buffer           string
-	lastSendTime     time.Time
-	lastSentPosition int // 记录上次发送的位置
+	bufferMu      sync.Mutex
+	buffer        string
+	lastSendTime  time.Time
 }
 
 // Dify API请求结构
@@ -116,14 +115,14 @@ func (d *DifyProvider) cleanupConversations() {
 
 // StreamChat 实现Provider接口
 func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, responseStream chan string) error {
-	// Clear sent content map and reset buffer position at the start of each chat
+	// Clear sent content map at the start of each chat
 	d.mu.Lock()
 	d.sentContent = make(map[string]bool)
 	d.mu.Unlock()
 	
-	// 重置缓冲区位置
+	// 重置缓冲区
 	d.bufferMu.Lock()
-	d.lastSentPosition = 0
+	d.buffer = ""
 	d.bufferMu.Unlock()
 
 	// 验证消息
@@ -456,19 +455,10 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			}
 		}
 	case "agent_thought":
-		// Handle agent_thought event specifically
-		if streamResp.Thought != "" {
-			if d.sentContent[streamResp.Thought] {
-				log.Printf("Skipping duplicate thought: %s", streamResp.Thought)
-			} else {
-				log.Printf("Sending new thought to response stream: %s", streamResp.Thought)
-				d.sentContent[streamResp.Thought] = true
-				select {
-				case responseStream <- streamResp.Thought:
-				default:
-					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
-				}
-			}
+		// 当收到agent_thought事件时，触发一次缓冲区内容的发送
+		log.Printf("Received agent_thought event, triggering buffer send")
+		if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
+			return err
 		}
 	case "error":
 		if streamResp.Data.ErrorCode != "" {
@@ -511,8 +501,8 @@ func (d *DifyProvider) sendBufferWithRateLimit(responseStream chan string, isMes
 	d.bufferMu.Lock()
 	defer d.bufferMu.Unlock()
 	
-	// 如果缓冲区为空或者没有新内容，不需要发送
-	if d.buffer == "" || d.lastSentPosition >= len(d.buffer) {
+	// 如果缓冲区为空，不需要发送
+	if d.buffer == "" {
 		return nil
 	}
 	
@@ -522,21 +512,13 @@ func (d *DifyProvider) sendBufferWithRateLimit(responseStream chan string, isMes
 	
 	// 如果应该发送（时间间隔大于200ms）或者是消息结束，则发送
 	if shouldSend || isMessageEnd {
-		// 只发送新内容（从上次发送位置到当前缓冲区末尾）
-		newContent := d.buffer[d.lastSentPosition:]
-		log.Printf("Sending new buffered content to response stream: %s", newContent)
+		log.Printf("Sending buffered content to response stream: %s", d.buffer)
 		
 		select {
-		case responseStream <- newContent:
-			// 发送成功，更新最后发送位置和时间
-			d.lastSentPosition = len(d.buffer)
+		case responseStream <- d.buffer:
+			// 发送成功，清空缓冲区并更新最后发送时间
+			d.buffer = ""
 			d.lastSendTime = now
-			
-			// 如果是消息结束，则清空缓冲区和重置位置
-			if isMessageEnd {
-				d.buffer = ""
-				d.lastSentPosition = 0
-			}
 		default:
 			return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 		}
