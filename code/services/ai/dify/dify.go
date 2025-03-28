@@ -173,9 +173,8 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	apiURL := strings.TrimRight(d.config.GetApiUrl(), "/")
 	fullURL := fmt.Sprintf("%s/v1/chat-messages", apiURL)
 	
-	log.Printf("Making request to Dify API: %s (API Key: %s...)", fullURL, d.config.GetApiKey()[:10])
-	log.Printf("Request headers: Authorization: Bearer %s..., Content-Type: %s", 
-		d.config.GetApiKey()[:10], "application/json")
+	log.Printf("Making request to Dify API: %s", fullURL)
+	log.Printf("Request headers: Authorization: %s...", d.config.GetApiKey()[:10])
 	log.Printf("Request body: %s", string(jsonBody))
 	
 	req, err := http.NewRequestWithContext(ctx, "POST", 
@@ -187,7 +186,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimPrefix(d.config.GetApiKey(), "Bearer ")))  // Ensure Bearer prefix is not duplicated
+	req.Header.Set("Authorization", d.config.GetApiKey())  // Use raw API key without Bearer prefix
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
