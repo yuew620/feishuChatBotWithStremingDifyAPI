@@ -424,28 +424,23 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 		// 只处理 agent_message 事件
 		var content string
 		if streamResp.Answer != "" {
-			// 去除内容前后的空格
-			content = strings.TrimSpace(streamResp.Answer)
-			log.Printf("Using top-level Answer field (trimmed): %s", content)
+			content = streamResp.Answer
+			log.Printf("Using top-level Answer field: %s", content)
 			
 			// 只有当 answer 不为空时，才添加到缓冲区并发送
-			if content != "" {
-				if d.sentContent[content] {
-					log.Printf("Skipping duplicate content: %s", content)
-				} else {
-					log.Printf("Adding content to buffer: %s", content)
-					d.sentContent[content] = true
-					
-					// 添加内容到缓冲区
-					d.addToBuffer(content)
-					
-					// 尝试发送缓冲区内容
-					if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
-						return err
-					}
-				}
+			if d.sentContent[content] {
+				log.Printf("Skipping duplicate content: %s", content)
 			} else {
-				log.Printf("Skipping empty answer after trimming in agent_message event")
+				log.Printf("Adding content to buffer: %s", content)
+				d.sentContent[content] = true
+				
+				// 添加内容到缓冲区
+				d.addToBuffer(content)
+				
+				// 尝试发送缓冲区内容
+				if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
+					return err
+				}
 			}
 		} else {
 			log.Printf("Skipping empty answer in agent_message event")
@@ -488,8 +483,14 @@ func (d *DifyProvider) addToBuffer(content string) {
 	d.bufferMu.Lock()
 	defer d.bufferMu.Unlock()
 	
+	// 添加内容到缓冲区前记录内容的十六进制表示，以便检查是否有不可见字符
+	log.Printf("Adding to buffer, content hex: %x", content)
+	
 	// 添加内容到缓冲区
 	d.buffer += content
+	
+	// 添加后记录缓冲区的十六进制表示
+	log.Printf("Buffer after adding content, hex: %x", d.buffer)
 }
 
 // sendBufferWithRateLimit 根据时间间隔决定是否发送缓冲区内容
@@ -509,6 +510,7 @@ func (d *DifyProvider) sendBufferWithRateLimit(responseStream chan string, isMes
 	// 如果应该发送（时间间隔大于200ms）或者是消息结束，则发送
 	if shouldSend || isMessageEnd {
 		log.Printf("Sending buffered content to response stream: %s", d.buffer)
+		log.Printf("Sending buffer hex: %x", d.buffer)
 		
 		select {
 		case responseStream <- d.buffer:
