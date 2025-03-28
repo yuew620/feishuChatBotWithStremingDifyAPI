@@ -71,77 +71,40 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 		log.Printf("Failed to send processing card: %v", err)
 		return false
 	}
-package handlers
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"github.com/k0kubun/pp/v3"
-	"log"
-	"start-feishubot/initialization"
-	"start-feishubot/services/accesscontrol"
-	"start-feishubot/services/ai"
-	"strings"
-	"sync"
-	"time"
-)
-
-type MessageAction struct {
-	provider ai.Provider
-	mu       sync.Mutex // 保护answer的并发访问
-	// 活跃会话计数
-	activeSessionsMu sync.RWMutex
-	activeSessions  map[string]bool
-}
-
-func NewMessageAction(provider ai.Provider) *MessageAction {
-	return &MessageAction{
-		provider:       provider,
-		activeSessions: make(map[string]bool),
+	// 从会话缓存中获取历史消息
+	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
+	
+	// 添加用户新消息
+	userMessage := ai.Message{
+		Role:    "user",
+		Content: a.info.qParsed,
 	}
-}
-
-func (m *MessageAction) Execute(a *ActionInfo) bool {
-	// 检查会话是否已经在处理中
-	m.activeSessionsMu.Lock()
-	if m.activeSessions[*a.info.sessionId] {
-		m.activeSessionsMu.Unlock()
-		log.Printf("Session %s is already being processed", *a.info.sessionId)
-		_ = sendMsg(*a.ctx, "您的上一条消息正在处理中，请稍后再试", a.info.chatId)
-		return false
-	}
-	m.activeSessions[*a.info.sessionId] = true
-	m.activeSessionsMu.Unlock()
-
-	// 确保在函数结束时清理会话状态
-	defer func() {
-		m.activeSessionsMu.Lock()
-		delete(m.activeSessions, *a.info.sessionId)
-		m.activeSessionsMu.Unlock()
-	}()
-
-	// Add access control
-	if initialization.GetConfig().AccessControlEnable &&
-		!accesscontrol.CheckAllowAccessThenIncrement(&a.info.userId) {
-
-		msg := fmt.Sprintf("UserId: 【%s】 has accessed max count today! Max access count today %s: 【%d】",
-			a.info.userId, accesscontrol.GetCurrentDateFlag(), initialization.GetConfig().AccessControlMaxCountPerUserPerDay)
-
-		_ = sendMsg(*a.ctx, msg, a.info.chatId)
-		return false
-		defer close(done)
-		defer close(chatResponseStream)
-
-	log.Printf("Sending request to AI provider with %d messages", len(aiMessages))
-	if err := m.provider.StreamChat(ctx, aiMessages, chatResponseStream); err != nil {
-		log.Printf("AI provider error: %v", err)
-		select {
-		case errChan <- err:
-		default:
+	aiMessages = append(aiMessages, userMessage)
+	
+	// 创建响应通道
+	chatResponseStream := make(chan string, 10)
+	errChan := make(chan error, 1)
+	answer := ""
+	
+	// 设置无内容超时
+	noContentTimeout := time.NewTimer(10 * time.Second)
+	defer noContentTimeout.Stop()
+	
+	// 启动goroutine处理AI请求
+	go func() {
+		defer func() {
+			close(chatResponseStream)
+		}()
+		
+		log.Printf("Sending request to AI provider with %d messages", len(aiMessages))
+		if err := m.provider.StreamChat(ctx, aiMessages, chatResponseStream); err != nil {
+			log.Printf("AI provider error: %v", err)
+			select {
+			case errChan <- err:
+			default:
+			}
 		}
-		return
-	}
 	}()
 
 	// 主循环处理响应
