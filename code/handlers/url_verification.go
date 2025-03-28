@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
 	"log"
@@ -20,11 +21,10 @@ func HandleUrlVerification(c *gin.Context) bool {
 	if c.Request.Header.Get("X-Lark-Request-Type") == "URL_VERIFICATION" {
 		log.Printf("Received URL verification request")
 		
-		// Read raw body
+		// Read raw body immediately to minimize latency
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
 			log.Printf("Failed to read request body: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request"})
 			return true
 		}
 		
@@ -34,17 +34,19 @@ func HandleUrlVerification(c *gin.Context) bool {
 		var event UrlVerification
 		if err := json.Unmarshal(body, &event); err != nil {
 			log.Printf("Failed to parse URL verification request: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return true
+		}
+
+		// Verify the request type is correct
+		if event.Type != "url_verification" {
+			log.Printf("Invalid verification type: %s", event.Type)
 			return true
 		}
 		
-		// Return the exact same format as received
-		response := map[string]interface{}{
-			"challenge": event.Challenge,
-		}
-		
-		log.Printf("Responding to URL verification with: %+v", response)
-		c.JSON(http.StatusOK, response)
+		// Return exactly what Feishu expects: {"challenge": "value"}
+		c.Header("Content-Type", "application/json")
+		c.String(http.StatusOK, fmt.Sprintf(`{"challenge":"%s"}`, event.Challenge))
+		log.Printf("Responded with challenge: %s", event.Challenge)
 		return true
 	}
 	return false
