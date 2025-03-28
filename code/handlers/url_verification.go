@@ -19,30 +19,30 @@ type UrlVerification struct {
 
 // HandleUrlVerification handles the URL verification request from Feishu
 func HandleUrlVerification(c *gin.Context) bool {
-	if c.Request.Header.Get("X-Lark-Request-Type") == "URL_VERIFICATION" {
-		log.Printf("Received URL verification request")
-		
-		// Read raw body immediately to minimize latency
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			log.Printf("Failed to read request body: %v", err)
-			return true
-		}
-		
-		// Log the raw request for debugging
-		log.Printf("Raw verification request: %s", string(body))
-		
-		var event UrlVerification
-		if err := json.Unmarshal(body, &event); err != nil {
-			log.Printf("Failed to parse URL verification request: %v", err)
-			return true
-		}
+	// Read raw body immediately to minimize latency
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		log.Printf("Failed to read request body: %v", err)
+		return false
+	}
+	
+	// Restore body for later use
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+	
+	// Try to parse as verification request
+	var event UrlVerification
+	if err := json.Unmarshal(body, &event); err != nil {
+		log.Printf("Not a verification request (parse error): %v", err)
+		return false
+	}
 
-		// Verify the request type is correct
-		if event.Type != "url_verification" {
-			log.Printf("Invalid verification type: %s", event.Type)
-			return true
-		}
+	// Check if this is a verification request
+	if event.Type != "url_verification" {
+		log.Printf("Not a verification request (type=%s)", event.Type)
+		return false
+	}
+
+	log.Printf("Handling URL verification request")
 
 		// Only verify token if it's configured
 		config := initialization.GetConfig()
