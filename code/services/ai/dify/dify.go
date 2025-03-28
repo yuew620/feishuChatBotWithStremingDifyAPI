@@ -44,6 +44,7 @@ type streamResponse struct {
 	Event           string            `json:"event"`
 	Thought         string            `json:"thought,omitempty"`    // agent_thought events use this field
 	ConversationId  string            `json:"conversation_id,omitempty"` // 会话ID
+	Answer          string            `json:"answer,omitempty"`     // agent_message events use this field
 	Data       struct {
 		Text          string            `json:"text"`
 		Answer        string            `json:"answer,omitempty"`  // Some events use answer field
@@ -375,8 +376,8 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 	// Log the event type and content details
 	log.Printf("Processing SSE event: %s", streamResp.Event)
 	if streamResp.Event == "message" || streamResp.Event == "agent_message" {
-		log.Printf("Message content - Text: %s, Answer: %s, Message: %s", 
-			streamResp.Data.Text, streamResp.Data.Answer, streamResp.Data.Message)
+		log.Printf("Message content - Text: %s, Answer: %s, Message: %s, TopLevelAnswer: %s", 
+			streamResp.Data.Text, streamResp.Data.Answer, streamResp.Data.Message, streamResp.Answer)
 	} else if streamResp.Event == "agent_thought" {
 		log.Printf("Thought content: %s", streamResp.Thought)
 	}
@@ -403,17 +404,21 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 
 	switch streamResp.Event {
 	case "message", "agent_message":
-		// Try different possible content fields
-		content := streamResp.Data.Text
-		if content == "" {
-			content = streamResp.Data.Answer
+		// 对于 agent_message 事件，优先使用顶级的 Answer 字段
+		var content string
+		if streamResp.Event == "agent_message" && streamResp.Answer != "" {
+			content = streamResp.Answer
+			log.Printf("Using top-level Answer field: %s", content)
+		} else {
+			// 尝试其他可能的内容字段
+			content = streamResp.Data.Text
+			if content == "" {
+				content = streamResp.Data.Answer
+			}
+			if content == "" {
+				content = streamResp.Data.Message
+			}
 		}
-		if content == "" {
-			content = streamResp.Data.Message
-		}
-
-		// 直接打印原始的 Answer 字段，用于调试
-		log.Printf("Raw answer field: %s", streamResp.Data.Answer)
 
 		// 检查消息长度，避免超过飞书卡片限制
 		if len(content) > 0 {
@@ -424,17 +429,6 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 				d.sentContent[content] = true
 				select {
 				case responseStream <- content:
-				default:
-					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
-				}
-			}
-		} else {
-			// 如果所有字段都为空，但 Answer 字段存在于 JSON 中，尝试直接使用原始 JSON 中的 Answer
-			rawAnswer := streamResp.Data.Answer
-			if rawAnswer != "" {
-				log.Printf("Using raw answer field: %s", rawAnswer)
-				select {
-				case responseStream <- rawAnswer:
 				default:
 					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 				}
