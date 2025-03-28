@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"start-feishubot/initialization"
 )
 
 // UrlVerification represents the URL verification request from Feishu
@@ -41,6 +42,18 @@ func HandleUrlVerification(c *gin.Context) bool {
 		if event.Type != "url_verification" {
 			log.Printf("Invalid verification type: %s", event.Type)
 			return true
+		}
+
+		// Only verify token if it's configured
+		config := initialization.GetConfig()
+		if config.FeishuAppVerificationToken != "" {
+			if event.Token != config.FeishuAppVerificationToken {
+				log.Printf("Invalid verification token: %s", event.Token)
+				return true
+			}
+			log.Printf("Verification token matched")
+		} else {
+			log.Printf("Verification token check skipped (not configured)")
 		}
 		
 		// Return exactly what Feishu expects: {"challenge": "value"}
