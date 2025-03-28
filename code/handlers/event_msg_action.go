@@ -66,21 +66,24 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
 	// 创建卡片实体
-	cardId, err := createCardEntity(*a.ctx, "正在思考中，请稍等...")
+	cardIdStr, err := createCardEntity(*a.ctx, "正在思考中，请稍等...")
 	if err != nil {
 		log.Printf("Failed to create card entity: %v", err)
 		return false
 	}
 	
+	// 转换为指针类型
+	cardId := &cardIdStr
+	
 	// 发送卡片实体
-	_, err = sendCardEntity(*a.ctx, cardId, *a.info.chatId)
+	_, err = sendCardEntity(*a.ctx, *cardId, *a.info.chatId)
 	if err != nil {
 		log.Printf("Failed to send card entity: %v", err)
 		return false
 	}
 	
 	// 记录日志
-	log.Printf("Created and sent card entity with ID: %s", cardId)
+	log.Printf("Created and sent card entity with ID: %s", *cardId)
 
 	answer := ""
 	chatResponseStream := make(chan string, 100) // 缓冲区避免阻塞
@@ -178,7 +181,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 				log.Printf("Updating card with new content: %s", res)
 				
 				// 直接在主线程中更新，确保顺序正确
-				if err := streamUpdateText(ctx, cardId, "content_block", currentAnswer); err != nil {
+				if err := streamUpdateText(ctx, *cardId, "content_block", currentAnswer); err != nil {
 					log.Printf("Failed to update card: %v", err)
 				}
 				
@@ -196,7 +199,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, cardId *string, answer string, aiMessages []ai.Message) bool {
 	// 更新最终卡片
-	if err := streamUpdateText(ctx, cardId, "content_block", answer); err != nil {
+	if err := streamUpdateText(ctx, *cardId, "content_block", answer); err != nil {
 		log.Printf("Failed to update final card: %v", err)
 		return false
 	}
