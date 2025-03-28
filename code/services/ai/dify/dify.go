@@ -278,7 +278,7 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 	log.Printf("Received SSE event: %s with text: %s", streamResp.Event, streamResp.Data.Text)
 
 	switch streamResp.Event {
-	case "message", "agent_message", "agent_thought":
+	case "message", "agent_message":
 		// Try different possible content fields
 		content := streamResp.Data.Text
 		if content == "" {
@@ -287,15 +287,22 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 		if content == "" {
 			content = streamResp.Data.Message
 		}
-		if content == "" && streamResp.Event == "agent_thought" {
-			content = streamResp.Thought
-		}
 
 		// 检查消息长度，避免超过飞书卡片限制
 		if len(content) > 0 {
 			log.Printf("Sending text to response stream: %s", content)
 			select {
 			case responseStream <- content:
+			default:
+				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+			}
+		}
+	case "agent_thought":
+		// Handle agent_thought event specifically
+		if streamResp.Thought != "" {
+			log.Printf("Found thought content: %s", streamResp.Thought)
+			select {
+			case responseStream <- streamResp.Thought:
 			default:
 				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 			}
@@ -317,14 +324,6 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 		return nil
 	default:
 		log.Printf("Unknown event type: %s with text: %s", streamResp.Event, streamResp.Data.Text)
-		if streamResp.Event == "agent_thought" && streamResp.Thought != "" {
-			log.Printf("Found thought content: %s", streamResp.Thought)
-			select {
-			case responseStream <- streamResp.Thought:
-			default:
-				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
-			}
-		}
 		return nil // 不中断流处理
 	}
 
