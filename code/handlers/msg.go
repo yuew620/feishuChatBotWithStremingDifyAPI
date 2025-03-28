@@ -17,6 +17,7 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
+	"start-feishubot/services"
 	"start-feishubot/services/openai"
 )
 
@@ -160,8 +161,8 @@ func getTenantAccessToken(ctx context.Context) (string, error) {
 	return result.TenantAccessToken, nil
 }
 
-// 创建卡片实体
-func createCardEntity(ctx context.Context, content string) (string, error) {
+// CreateCardEntity 创建卡片实体 (导出以供卡片池使用)
+func CreateCardEntity(ctx context.Context, content string) (string, error) {
 	startTime := time.Now()
 	log.Printf("[Timing] Starting card entity creation")
 	
@@ -1287,12 +1288,17 @@ func createSimpleCard(content string) (string, error) {
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
 	log.Printf("Sending processing card for message ID: %s", *msgId)
 	
-	// 步骤一：创建卡片实体
-	content := "正在思考中，请稍等..."
-	cardEntityId, err := createCardEntity(ctx, content)
+	// 从卡片池获取卡片ID
+	cardPool := services.GetCardPool()
+	if cardPool == nil {
+		log.Printf("Card pool not initialized, falling back to direct creation")
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	cardEntityId, err := cardPool.GetCard(ctx)
 	if err != nil {
-		log.Printf("Failed to create card entity: %v", err)
-		return nil, fmt.Errorf("failed to create card entity: %w", err)
+		log.Printf("Failed to get card from pool: %v, falling back to direct creation", err)
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
 	}
 	
 	// 直接使用回复方式，不需要获取聊天ID
@@ -1311,21 +1317,16 @@ func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*
 	
 	if err != nil {
 		log.Printf("Failed to reply with card entity: %v", err)
-		// 回退到使用SDK回复消息
 		return sendOnProcessCardFallback(ctx, sessionId, msgId)
 	}
 	
 	if !resp.Success() {
 		log.Printf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
-		// 回退到使用SDK回复消息
 		return sendOnProcessCardFallback(ctx, sessionId, msgId)
 	}
 	
 	messageId := *resp.Data.MessageId
 	log.Printf("Successfully sent card entity using reply method, message ID: %s", messageId)
-	
-	// 已经通过回复方式发送了卡片实体，不需要再次发送
-	log.Printf("Successfully created and sent card entity: cardId=%s, messageId=%s", cardEntityId, messageId)
 	
 	// 返回卡片信息
 	return &CardInfo{
