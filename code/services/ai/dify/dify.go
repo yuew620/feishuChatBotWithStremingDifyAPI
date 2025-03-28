@@ -114,6 +114,15 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		log.Printf("Using session_id from metadata as conversation_id: %s", conversationID)
 	}
 	
+	// 从最后一条消息中提取用户ID
+	userID := "feishu-bot" // 默认值
+	if lastMsg.Metadata != nil {
+		if id, ok := lastMsg.Metadata["user_id"]; ok && id != "" {
+			userID = id
+			log.Printf("Using user_id from metadata: %s", userID)
+		}
+	}
+	
 	reqBody := streamRequest{
 		Inputs: map[string]string{
 			"history": historyStr,
@@ -121,7 +130,7 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		Query:           lastMsg.Content,
 		ResponseMode:    "streaming",
 		ConversationId:  conversationID,
-		User:            "feishu-bot",
+		User:            userID,
 	}
 
 	// 使用重试机制发送请求

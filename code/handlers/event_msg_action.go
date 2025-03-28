@@ -74,10 +74,14 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	// 从会话缓存中获取历史消息
 	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
 	
-	// 添加用户新消息
+	// 添加用户新消息，并设置元数据
 	userMessage := ai.Message{
 		Role:    "user",
 		Content: a.info.qParsed,
+		Metadata: map[string]string{
+			"session_id": *a.info.sessionId,
+			"user_id":    a.info.userId,
+		},
 	}
 	aiMessages = append(aiMessages, userMessage)
 	
