@@ -312,11 +312,19 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 			nil)
 	case "done", "message_end":
 		return nil
-	case "ping", "agent_thought":
-		// 忽略这些事件类型
+	case "ping":
+		// 忽略心跳事件
 		return nil
 	default:
 		log.Printf("Unknown event type: %s with text: %s", streamResp.Event, streamResp.Data.Text)
+		if streamResp.Event == "agent_thought" && streamResp.Thought != "" {
+			log.Printf("Found thought content: %s", streamResp.Thought)
+			select {
+			case responseStream <- streamResp.Thought:
+			default:
+				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+			}
+		}
 		return nil // 不中断流处理
 	}
 
