@@ -43,9 +43,73 @@ func getNextSequence() int64 {
 	return atomic.AddInt64(&sequenceCounter, 1)
 }
 
+// 获取tenant_access_token
+func getTenantAccessToken(ctx context.Context) (string, error) {
+	client := initialization.GetLarkClient()
+	config := initialization.GetConfig()
+	
+	// 构建请求体
+	reqBody := map[string]interface{}{
+		"app_id":     config.FeishuAppId,
+		"app_secret": config.FeishuAppSecret,
+	}
+	
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	// 构建请求URL
+	url := "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+	
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应
+	var result struct {
+		Code              int    `json:"code"`
+		Msg               string `json:"msg"`
+		TenantAccessToken string `json:"tenant_access_token"`
+		Expire            int    `json:"expire"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Code != 0 {
+		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
+	}
+	
+	return result.TenantAccessToken, nil
+}
+
 // 流式更新文本内容
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
-	client := initialization.GetLarkClient()
+	// 获取tenant_access_token
+	token, err := getTenantAccessToken(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant_access_token: %w", err)
+	}
 	
 	// 构建请求体
 	reqBody := map[string]interface{}{
@@ -70,7 +134,7 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.GetTenantAccessToken()))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	// 发送请求
 	resp, err := http.DefaultClient.Do(req)
@@ -149,58 +213,133 @@ func replyCardWithBackId(ctx context.Context, msgId *string, cardContent string)
 }
 
 func newSendCard(header *larkcard.MessageCardHeader, elements ...larkcard.MessageCardElement) (string, error) {
-	config := &larkcard.MessageCardConfig{
-		WideScreenMode: false,
-		EnableForward:  true,
-		UpdateMulti:    true,
-		StreamingMode:  true, // 启用流式更新模式
-	}
+	// 使用Builder模式创建配置
+	config := larkcard.NewMessageCardConfig().
+		WideScreenMode(false).
+		Build()
+	
 	var aElementPool []larkcard.MessageCardElement
 	for _, element := range elements {
 		aElementPool = append(aElementPool, element)
 	}
-	cardContent, err := larkcard.NewMessageCard().
+	
+	// 添加额外的配置到JSON
+	cardObj := larkcard.NewMessageCard().
 		Config(config).
 		Header(header).
-		Elements(aElementPool).
-		String()
-	return cardContent, err
+		Elements(aElementPool)
+	
+	// 获取JSON字符串
+	cardStr, err := cardObj.String()
+	if err != nil {
+		return "", err
+	}
+	
+	// 解析JSON以添加额外的配置
+	var cardJSON map[string]interface{}
+	if err := json.Unmarshal([]byte(cardStr), &cardJSON); err != nil {
+		return "", err
+	}
+	
+	// 添加流式更新和多次更新配置
+	if configObj, ok := cardJSON["config"].(map[string]interface{}); ok {
+		configObj["update_multi"] = true
+		configObj["streaming_mode"] = true
+	}
+	
+	// 重新序列化
+	modifiedJSON, err := json.Marshal(cardJSON)
+	if err != nil {
+		return "", err
+	}
+	
+	return string(modifiedJSON), nil
 }
 
 func newSendCardWithOutHeader(elements ...larkcard.MessageCardElement) (string, error) {
-	config := &larkcard.MessageCardConfig{
-		WideScreenMode: false,
-		EnableForward:  true,
-		UpdateMulti:    true,
-		StreamingMode:  true, // 启用流式更新模式
-	}
+	// 使用Builder模式创建配置
+	config := larkcard.NewMessageCardConfig().
+		WideScreenMode(false).
+		Build()
+	
 	var aElementPool []larkcard.MessageCardElement
 	for _, element := range elements {
 		aElementPool = append(aElementPool, element)
 	}
-	cardContent, err := larkcard.NewMessageCard().
+	
+	// 添加额外的配置到JSON
+	cardObj := larkcard.NewMessageCard().
 		Config(config).
-		Elements(aElementPool).
-		String()
-	return cardContent, err
+		Elements(aElementPool)
+	
+	// 获取JSON字符串
+	cardStr, err := cardObj.String()
+	if err != nil {
+		return "", err
+	}
+	
+	// 解析JSON以添加额外的配置
+	var cardJSON map[string]interface{}
+	if err := json.Unmarshal([]byte(cardStr), &cardJSON); err != nil {
+		return "", err
+	}
+	
+	// 添加流式更新和多次更新配置
+	if configObj, ok := cardJSON["config"].(map[string]interface{}); ok {
+		configObj["update_multi"] = true
+		configObj["streaming_mode"] = true
+	}
+	
+	// 重新序列化
+	modifiedJSON, err := json.Marshal(cardJSON)
+	if err != nil {
+		return "", err
+	}
+	
+	return string(modifiedJSON), nil
 }
 
 func newSimpleSendCard(elements ...larkcard.MessageCardElement) (string, error) {
-	config := &larkcard.MessageCardConfig{
-		WideScreenMode: false,
-		EnableForward:  true,
-		UpdateMulti:    true,
-		StreamingMode:  true, // 启用流式更新模式
-	}
+	// 使用Builder模式创建配置
+	config := larkcard.NewMessageCardConfig().
+		WideScreenMode(false).
+		Build()
+	
 	var aElementPool []larkcard.MessageCardElement
 	for _, element := range elements {
 		aElementPool = append(aElementPool, element)
 	}
-	cardContent, err := larkcard.NewMessageCard().
+	
+	// 添加额外的配置到JSON
+	cardObj := larkcard.NewMessageCard().
 		Config(config).
-		Elements(aElementPool).
-		String()
-	return cardContent, err
+		Elements(aElementPool)
+	
+	// 获取JSON字符串
+	cardStr, err := cardObj.String()
+	if err != nil {
+		return "", err
+	}
+	
+	// 解析JSON以添加额外的配置
+	var cardJSON map[string]interface{}
+	if err := json.Unmarshal([]byte(cardStr), &cardJSON); err != nil {
+		return "", err
+	}
+	
+	// 添加流式更新和多次更新配置
+	if configObj, ok := cardJSON["config"].(map[string]interface{}); ok {
+		configObj["update_multi"] = true
+		configObj["streaming_mode"] = true
+	}
+	
+	// 重新序列化
+	modifiedJSON, err := json.Marshal(cardJSON)
+	if err != nil {
+		return "", err
+	}
+	
+	return string(modifiedJSON), nil
 }
 
 // withMainMd 用于生成markdown消息体
@@ -500,7 +639,7 @@ func PatchCard(ctx context.Context, msgId *string, cardContent string) error {
 }
 
 // newMenu 用于创建下拉菜单
-func newMenu(placeHolder string, value map[string]interface{}, options ...MenuOption) *larkcard.MessageCardEmbedSelectMenu {
+func newMenu(placeHolder string, value map[string]interface{}, options ...MenuOption) larkcard.MessageCardActionElement {
 	var selectOptions []*larkcard.MessageCardEmbedSelectOption
 	for _, option := range options {
 		selectOptions = append(selectOptions, larkcard.NewMessageCardEmbedSelectOption().
@@ -511,7 +650,7 @@ func newMenu(placeHolder string, value map[string]interface{}, options ...MenuOp
 			Build())
 	}
 
-	menu := larkcard.NewMessageCardEmbedSelectMenu().
+	menu := larkcard.NewMessageCardEmbedSelectStaticMenu().
 		Options(selectOptions).
 		Placeholder(larkcard.NewMessageCardPlainText().
 			Content(placeHolder).
