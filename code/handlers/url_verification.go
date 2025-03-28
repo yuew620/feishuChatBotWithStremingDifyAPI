@@ -58,7 +58,8 @@ func HandleUrlVerification(c *gin.Context) bool {
 		
 		// Return exactly what Feishu expects: {"challenge": "value"}
 		c.Header("Content-Type", "application/json")
-		c.String(http.StatusOK, fmt.Sprintf(`{"challenge":"%s"}`, event.Challenge))
+		response := fmt.Sprintf(`{"challenge":"%s"}`+"\n", event.Challenge)
+		c.String(http.StatusOK, response)
 		log.Printf("Responded with challenge: %s", event.Challenge)
 		return true
 	}
