@@ -412,6 +412,9 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			content = streamResp.Data.Message
 		}
 
+		// 直接打印原始的 Answer 字段，用于调试
+		log.Printf("Raw answer field: %s", streamResp.Data.Answer)
+
 		// 检查消息长度，避免超过飞书卡片限制
 		if len(content) > 0 {
 			if d.sentContent[content] {
@@ -421,6 +424,17 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 				d.sentContent[content] = true
 				select {
 				case responseStream <- content:
+				default:
+					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+				}
+			}
+		} else {
+			// 如果所有字段都为空，但 Answer 字段存在于 JSON 中，尝试直接使用原始 JSON 中的 Answer
+			rawAnswer := streamResp.Data.Answer
+			if rawAnswer != "" {
+				log.Printf("Using raw answer field: %s", rawAnswer)
+				select {
+				case responseStream <- rawAnswer:
 				default:
 					return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 				}
