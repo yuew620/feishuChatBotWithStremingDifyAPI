@@ -102,6 +102,199 @@ func getTenantAccessToken(ctx context.Context) (string, error) {
 	return result.TenantAccessToken, nil
 }
 
+// 创建卡片实体
+func createCardEntity(ctx context.Context, content string) (string, error) {
+	// 获取tenant_access_token
+	token, err := getTenantAccessToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant_access_token: %w", err)
+	}
+	
+	// 构建卡片JSON 2.0结构
+	cardJSON := map[string]interface{}{
+		"schema": "2.0",
+		"header": map[string]interface{}{
+			"title": map[string]interface{}{
+				"content": "AI回复",
+				"tag": "plain_text",
+			},
+		},
+		"config": map[string]interface{}{
+			"streaming_mode": true,
+			"summary": map[string]interface{}{
+				"content": "[生成中]",
+			},
+			"streaming_config": map[string]interface{}{
+				"print_frequency_ms": map[string]interface{}{
+					"default": 30,
+					"android": 25,
+					"ios": 40,
+					"pc": 50,
+				},
+				"print_step": map[string]interface{}{
+					"default": 2,
+					"android": 3,
+					"ios": 4,
+					"pc": 5,
+				},
+				"print_strategy": "fast",
+			},
+		},
+		"body": map[string]interface{}{
+			"elements": []map[string]interface{}{
+				{
+					"tag": "markdown",
+					"content": content,
+					"element_id": "content_block",
+				},
+			},
+		},
+	}
+	
+	// 序列化卡片JSON
+	cardJSONStr, err := json.Marshal(cardJSON)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal card JSON: %w", err)
+	}
+	
+	// 构建请求体
+	reqBody := map[string]interface{}{
+		"type": "card_json",
+		"data": string(cardJSONStr),
+	}
+	
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	// 构建请求URL
+	url := "https://open.feishu.cn/open-apis/cardkit/v1/cards/"
+	
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			CardID string `json:"card_id"`
+		} `json:"data"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Code != 0 {
+		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
+	}
+	
+	return result.Data.CardID, nil
+}
+
+// 发送卡片实体
+func sendCardEntity(ctx context.Context, cardID string, receiveID string) (string, error) {
+	// 获取tenant_access_token
+	token, err := getTenantAccessToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant_access_token: %w", err)
+	}
+	
+	// 构建卡片实体内容
+	cardContent := map[string]interface{}{
+		"type": "card",
+		"data": map[string]interface{}{
+			"card_id": cardID,
+		},
+	}
+	
+	// 序列化卡片内容
+	cardContentStr, err := json.Marshal(cardContent)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal card content: %w", err)
+	}
+	
+	// 构建请求体
+	reqBody := map[string]interface{}{
+		"receive_id": receiveID,
+		"msg_type": "interactive",
+		"content": string(cardContentStr),
+		"uuid": uuid.New().String(),
+	}
+	
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	// 构建请求URL
+	url := "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
+	
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	// 解析响应
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			MessageID string `json:"message_id"`
+		} `json:"data"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+	
+	if result.Code != 0 {
+		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
+	}
+	
+	return result.Data.MessageID, nil
+}
+
 // 流式更新文本内容
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
 	// 获取tenant_access_token
@@ -115,11 +308,6 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 		"uuid":     uuid.New().String(), // 使用UUID保证幂等性
 		"content":  content,
 		"sequence": getNextSequence(), // 使用原子计数器获取序列号
-		// 添加7.23及以上版本支持的参数
-		"update_strategy": map[string]interface{}{
-			"mode": "typewriter", // 打字机模式
-			"speed": 100, // 速度，每分钟字数
-		},
 	}
 	
 	jsonBody, err := json.Marshal(reqBody)
@@ -758,12 +946,11 @@ func updateTextCard(ctx context.Context, msg string, cardId *string) error {
 }
 
 // 更新最终卡片
-func updateFinalCard(ctx context.Context, msg string, msgId *string) error {
-	newCard, _ := newSendCardWithOutHeader(
-		withMainText(msg))
-	err := PatchCard(ctx, msgId, newCard)
+func updateFinalCard(ctx context.Context, msg string, cardId *string) error {
+	// 使用流式更新API
+	err := streamUpdateText(ctx, *cardId, "content_block", msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to update final card: %w", err)
 	}
 	return nil
 }

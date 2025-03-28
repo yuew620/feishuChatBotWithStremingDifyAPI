@@ -65,11 +65,22 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
-	cardId, err := sendOnProcess(a)
+	// 创建卡片实体
+	cardId, err := createCardEntity(*a.ctx, "正在思考中，请稍等...")
 	if err != nil {
-		log.Printf("Failed to send processing card: %v", err)
+		log.Printf("Failed to create card entity: %v", err)
 		return false
 	}
+	
+	// 发送卡片实体
+	_, err = sendCardEntity(*a.ctx, cardId, *a.info.chatId)
+	if err != nil {
+		log.Printf("Failed to send card entity: %v", err)
+		return false
+	}
+	
+	// 记录日志
+	log.Printf("Created and sent card entity with ID: %s", cardId)
 
 	answer := ""
 	chatResponseStream := make(chan string, 100) // 缓冲区避免阻塞
@@ -160,20 +171,19 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 					answer = answer + " " + res
 				}
 				
-				// 使用字符级别的更新，实现真正的打字机效果
-				// 将新内容拆分成单个字符，逐个发送
+				// 使用流式更新API更新卡片内容
 				currentAnswer := answer
 				
 				// 记录日志
 				log.Printf("Updating card with new content: %s", res)
 				
 				// 直接在主线程中更新，确保顺序正确
-				if err := updateTextCard(ctx, currentAnswer, cardId); err != nil {
+				if err := streamUpdateText(ctx, cardId, "content_block", currentAnswer); err != nil {
 					log.Printf("Failed to update card: %v", err)
 				}
 				
-				// 添加更长的延迟，让打字机效果更明显
-				time.Sleep(300 * time.Millisecond)
+				// 添加小延迟，让打字机效果更明显
+				time.Sleep(100 * time.Millisecond)
 			}
 			m.mu.Unlock()
 
@@ -186,7 +196,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, cardId *string, answer string, aiMessages []ai.Message) bool {
 	// 更新最终卡片
-	if err := updateFinalCard(ctx, answer, cardId); err != nil {
+	if err := streamUpdateText(ctx, cardId, "content_block", answer); err != nil {
 		log.Printf("Failed to update final card: %v", err)
 		return false
 	}
