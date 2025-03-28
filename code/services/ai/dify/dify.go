@@ -99,13 +99,28 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		historyStr = "[]"  // Empty array for no history
 	}
 
+	// 从最后一条消息中提取会话ID作为Dify的conversation_id
+	conversationID := ""
+	if lastMsg.Metadata != nil {
+		if id, ok := lastMsg.Metadata["session_id"]; ok && id != "" {
+			conversationID = id
+		}
+	}
+	
+	// 如果没有找到session_id，记录日志
+	if conversationID == "" {
+		log.Printf("No session_id found in message metadata, using empty string as conversation_id")
+	} else {
+		log.Printf("Using session_id from metadata as conversation_id: %s", conversationID)
+	}
+	
 	reqBody := streamRequest{
 		Inputs: map[string]string{
 			"history": historyStr,
 		},
 		Query:           lastMsg.Content,
 		ResponseMode:    "streaming",
-		ConversationId:  "",
+		ConversationId:  conversationID,
 		User:            "feishu-bot",
 	}
 

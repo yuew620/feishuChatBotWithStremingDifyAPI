@@ -8,8 +8,9 @@ import (
 
 // Message 统一的消息结构
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role     string                 `json:"role"`
+	Content  string                 `json:"content"`
+	Metadata map[string]string      `json:"metadata,omitempty"`
 }
 
 // ValidateMessage 验证消息格式

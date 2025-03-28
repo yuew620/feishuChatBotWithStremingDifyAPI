@@ -65,71 +65,71 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
-	// 创建卡片实体
-	cardIdStr, err := createCardEntity(*a.ctx, "正在思考中，请稍等...")
+	// 发送处理中卡片
+	cardId, err := sendOnProcess(a)
 	if err != nil {
-		log.Printf("Failed to create card entity: %v", err)
+		log.Printf("Failed to send processing card: %v", err)
 		return false
 	}
-	
-	// 转换为指针类型
-	cardId := &cardIdStr
-	
-	// 发送卡片实体
-	_, err = sendCardEntity(*a.ctx, *cardId, *a.info.chatId)
-	if err != nil {
-		log.Printf("Failed to send card entity: %v", err)
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/k0kubun/pp/v3"
+	"log"
+	"start-feishubot/initialization"
+	"start-feishubot/services/accesscontrol"
+	"start-feishubot/services/ai"
+	"strings"
+	"sync"
+	"time"
+)
+
+type MessageAction struct {
+	provider ai.Provider
+	mu       sync.Mutex // 保护answer的并发访问
+	// 活跃会话计数
+	activeSessionsMu sync.RWMutex
+	activeSessions  map[string]bool
+}
+
+func NewMessageAction(provider ai.Provider) *MessageAction {
+	return &MessageAction{
+		provider:       provider,
+		activeSessions: make(map[string]bool),
+	}
+}
+
+func (m *MessageAction) Execute(a *ActionInfo) bool {
+	// 检查会话是否已经在处理中
+	m.activeSessionsMu.Lock()
+	if m.activeSessions[*a.info.sessionId] {
+		m.activeSessionsMu.Unlock()
+		log.Printf("Session %s is already being processed", *a.info.sessionId)
+		_ = sendMsg(*a.ctx, "您的上一条消息正在处理中，请稍后再试", a.info.chatId)
 		return false
 	}
-	
-	// 记录日志
-	log.Printf("Created and sent card entity with ID: %s", *cardId)
+	m.activeSessions[*a.info.sessionId] = true
+	m.activeSessionsMu.Unlock()
 
-	answer := ""
-	chatResponseStream := make(chan string, 100) // 缓冲区避免阻塞
-	done := make(chan struct{})
-	
-	// 创建错误通道
-	errChan := make(chan error, 1)
+	// 确保在函数结束时清理会话状态
+	defer func() {
+		m.activeSessionsMu.Lock()
+		delete(m.activeSessions, *a.info.sessionId)
+		m.activeSessionsMu.Unlock()
+	}()
 
-	// 设置无响应超时
-	noContentTimeout := time.AfterFunc(10*time.Second, func() {
-		pp.Println("no content timeout")
-		select {
-		case errChan <- fmt.Errorf("no content timeout"):
-		default:
-		}
-	})
-	defer noContentTimeout.Stop()
+	// Add access control
+	if initialization.GetConfig().AccessControlEnable &&
+		!accesscontrol.CheckAllowAccessThenIncrement(&a.info.userId) {
 
-	// 获取并验证会话历史
-	messages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
-	log.Printf("Retrieved %d historical messages for session: %s", len(messages), *a.info.sessionId)
-	
-	aiMessages := make([]ai.Message, 0, len(messages)+1)
-	
-	// 转换并验证历史消息
-	for _, m := range messages {
-		if err := m.Validate(); err != nil {
-			log.Printf("Invalid historical message: %v", err)
-			continue
-		}
-		aiMessages = append(aiMessages, m)
-	}
+		msg := fmt.Sprintf("UserId: 【%s】 has accessed max count today! Max access count today %s: 【%d】",
+			a.info.userId, accesscontrol.GetCurrentDateFlag(), initialization.GetConfig().AccessControlMaxCountPerUserPerDay)
 
-	// 添加并验证用户新消息
-	newMsg := ai.Message{
-		Role:    "user",
-		Content: a.info.qParsed,
-	}
-	if err := newMsg.Validate(); err != nil {
-		_ = updateFinalCard(ctx, "消息格式错误", cardId)
+		_ = sendMsg(*a.ctx, msg, a.info.chatId)
 		return false
-	}
-	aiMessages = append(aiMessages, newMsg)
-
-	// 启动AI对话协程
-	go func() {
 		defer close(done)
 		defer close(chatResponseStream)
 

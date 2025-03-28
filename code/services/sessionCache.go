@@ -156,7 +156,20 @@ func (s *SessionService) GetMessages(sessionId string) []ai.Message {
 		return nil
 	}
 	sessionMeta := sessionContext.(*SessionMeta)
-	return sessionMeta.Messages
+	
+	// 复制消息并添加session_id到元数据
+	messages := make([]ai.Message, len(sessionMeta.Messages))
+	for i, msg := range sessionMeta.Messages {
+		messages[i] = msg
+		// 确保元数据存在
+		if messages[i].Metadata == nil {
+			messages[i].Metadata = make(map[string]string)
+		}
+		// 添加session_id到元数据
+		messages[i].Metadata["session_id"] = sessionId
+	}
+	
+	return messages
 }
 
 // SetMessages 设置会话消息
