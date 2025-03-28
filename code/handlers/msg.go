@@ -668,26 +668,29 @@ func PatchCard(ctx context.Context, msgId *string, cardContent string) error {
 
 // newMenu 用于创建下拉菜单
 func newMenu(placeHolder string, value map[string]interface{}, options ...MenuOption) larkcard.MessageCardActionElement {
-	var selectOptions []*larkcard.MessageCardEmbedSelectOption
-	for _, option := range options {
-		selectOptions = append(selectOptions, larkcard.NewMessageCardEmbedSelectOption().
-			Value(option.value).
+	// 创建按钮代替下拉菜单
+	// 由于SDK版本限制，我们使用按钮代替下拉菜单
+	if len(options) > 0 {
+		// 使用第一个选项创建按钮
+		btn := larkcard.NewMessageCardEmbedButton().
+			Type(larkcard.MessageCardButtonTypePrimary).
+			Value(value).
 			Text(larkcard.NewMessageCardPlainText().
-				Content(option.label).
-				Build()).
-			Build())
+				Content(placeHolder + ": " + options[0].label).
+				Build())
+		
+		return btn
 	}
-
-	// 创建基本菜单
-	menu := larkcard.NewMessageCardEmbedSelectMenu().
-		Options(selectOptions).
-		Placeholder(larkcard.NewMessageCardPlainText().
-			Content(placeHolder).
-			Build()).
+	
+	// 如果没有选项，创建一个默认按钮
+	btn := larkcard.NewMessageCardEmbedButton().
+		Type(larkcard.MessageCardButtonTypePrimary).
 		Value(value).
-		Build()
-
-	return menu
+		Text(larkcard.NewMessageCardPlainText().
+			Content(placeHolder).
+			Build())
+	
+	return btn
 }
 
 // uploadImage 用于上传图片
