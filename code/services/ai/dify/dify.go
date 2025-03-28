@@ -420,25 +420,14 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 	}
 
 	switch streamResp.Event {
-	case "message", "agent_message":
-		// 对于 agent_message 事件，优先使用顶级的 Answer 字段
+	case "agent_message":
+		// 只处理 agent_message 事件
 		var content string
-		if streamResp.Event == "agent_message" && streamResp.Answer != "" {
+		if streamResp.Answer != "" {
 			content = streamResp.Answer
 			log.Printf("Using top-level Answer field: %s", content)
-		} else {
-			// 尝试其他可能的内容字段
-			content = streamResp.Data.Text
-			if content == "" {
-				content = streamResp.Data.Answer
-			}
-			if content == "" {
-				content = streamResp.Data.Message
-			}
-		}
-
-		// 检查消息长度，避免超过飞书卡片限制
-		if len(content) > 0 {
+			
+			// 只有当 answer 不为空时，才添加到缓冲区并发送
 			if d.sentContent[content] {
 				log.Printf("Skipping duplicate content: %s", content)
 			} else {
@@ -453,6 +442,8 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 					return err
 				}
 			}
+		} else {
+			log.Printf("Skipping empty answer in agent_message event")
 		}
 	case "agent_thought":
 		// 当收到agent_thought事件时，触发一次缓冲区内容的发送
