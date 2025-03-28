@@ -71,8 +71,14 @@ func main() {
 			"message": "pong",
 		})
 	})
-	r.POST("/webhook/event",
-		sdkginext.NewEventHandlerFunc(eventHandler))
+	r.POST("/webhook/event", func(c *gin.Context) {
+		// Handle URL verification first
+		if handlers.HandleUrlVerification(c) {
+			return
+		}
+		// Handle other events
+		sdkginext.NewEventHandlerFunc(eventHandler)(c)
+	})
 	r.POST("/webhook/card",
 		sdkginext.NewCardActionHandlerFunc(
 			cardHandler))

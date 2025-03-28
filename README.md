@@ -103,6 +103,51 @@ curl http://localhost:9000/ping
 tail -f logs/app.log
 ```
 
+### 6. API接口说明
+
+服务提供以下接口：
+
+1. 健康检查接口：
+   - 端点：`/ping`
+   - 方法：GET
+   - 返回：`{"message": "pong"}`
+   - 用途：验证服务是否正常运行
+
+2. 飞书事件订阅接口：
+   - 端点：`/webhook/event`
+   - 方法：POST
+   - 用途：接收飞书消息和事件推送
+   - 支持的消息类型：
+     * 文本消息（text）
+     * 图片消息（image）
+     * 语音消息（audio）
+   - 特性：
+     * 支持多轮对话（通过sessionId关联）
+     * 支持流式响应
+     * 支持并发消息处理
+     * 消息防重复处理
+     * 超时保护（30秒）
+     * 访问频率控制
+
+3. 飞书卡片回调接口：
+   - 端点：`/webhook/card`
+   - 方法：POST
+   - 用途：处理飞书消息卡片交互
+   - 特性：
+     * 支持卡片按钮交互
+     * 支持卡片实时更新
+     * 支持消息处理状态展示
+
+在飞书开发者后台配置 Webhook 地址时：
+- 事件订阅：`http(s)://your-domain:9000/webhook/event`
+- 卡片回调：`http(s)://your-domain:9000/webhook/card`
+
+注意事项：
+1. 确保配置了正确的 Verification Token 和 Encrypt Key
+2. 建议在生产环境使用 HTTPS
+3. 接口支持加密消息格式
+4. 建议配置访问频率限制（ACCESS_CONTROL_MAX_COUNT_PER_USER_PER_DAY）
+
 ## 维护命令
 
 ### 服务管理
