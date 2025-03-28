@@ -181,7 +181,6 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 				// 如果距离上次更新超过100ms或缓冲区超过50字符，就更新卡片
 				if time.Since(lastUpdate) > 100*time.Millisecond || updateBuffer.Len() > 50 {
 					currentAnswer := answer
-					bufferContent := updateBuffer.String()
 					updateBuffer.Reset()
 					lastUpdate = time.Now()
 					
