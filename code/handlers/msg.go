@@ -365,38 +365,65 @@ type CardInfo struct {
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
 	log.Printf("Attempting to update card: cardId=%s, elementId=%s, contentLength=%d", cardId, elementId, len(content))
 	
-	// 使用SDK更新卡片内容
-	client := initialization.GetLarkClient()
+	// 获取tenant_access_token
+	token, err := getTenantAccessToken(ctx)
+	if err != nil {
+		log.Printf("Failed to get tenant_access_token: %v", err)
+		return fmt.Errorf("failed to get tenant_access_token: %w", err)
+	}
 	
 	// 获取序列号和UUID
 	sequence := getNextSequence()
 	reqUuid := uuid.New().String()
 	
-	// 创建请求对象
-	req := larkcardkit.NewContentCardElementReqBuilder().
-		CardId(cardId).
-		ElementId(elementId).
-		Body(larkcardkit.NewContentCardElementReqBodyBuilder().
-			Uuid(reqUuid).
-			Content(content).
-			Sequence(int(sequence)). // 将int64转换为int
-			Build()).
-		Build()
+	// 构建请求体
+	reqBody := map[string]interface{}{
+		"content":  content,
+		"sequence": sequence,
+		"uuid":     reqUuid,
+	}
 	
-	// 发起请求
-	resp, err := client.Cardkit.V1.CardElement.Content(ctx, req)
+	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("Failed to update card content: %v", err)
-		return fmt.Errorf("failed to update card content: %w", err)
+		log.Printf("Failed to marshal request body: %v", err)
+		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
+
+	// 构建请求URL
+	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/elements/%s/content", cardId, elementId)
+	log.Printf("Making request to URL: %s", url)
+	log.Printf("Request body: sequence=%d, uuid=%s, contentLength=%d", sequence, reqUuid, len(content))
 	
-	// 检查响应
-	if !resp.Success() {
-		log.Printf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
-		return fmt.Errorf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		log.Printf("Failed to create request: %v", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
+
+	// 设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Failed to send request: %v", err)
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+		return fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	// 读取并记录响应
+	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("Card update successful: status=%d, response=%s", resp.StatusCode, string(respBody))
 	
-	log.Printf("Card update successful")
 	return nil
 }
 
