@@ -145,7 +145,7 @@ tail -f logs/app.log
 测试方法：
 ```bash
 # 测试URL验证（已验证可用）
-curl -X POST https://feishubotstreaming.sdx.pub/webhook/event \
+curl -X POST http://your-domain:9000/webhook/event \
   -H "Content-Type: application/json" \
   -H "X-Lark-Request-Type: URL_VERIFICATION" \
   -d '{"challenge": "test123", "token": "test", "type": "url_verification"}'
@@ -163,49 +163,7 @@ curl -X POST https://feishubotstreaming.sdx.pub/webhook/event \
 
 ## 维护命令
 
-## 功能特点
-
-- 流式对话：实时显示AI响应
-- 会话管理：支持多用户会话隔离
-- 内存优化：智能会话清理机制
-- 配置灵活：支持多种AI提供商
-- 部署简单：提供Docker部署方案
-
-## 系统要求
-
-- Ubuntu 24.04 LTS
-- Docker & Docker Compose
-- 8GB以上可用内存（服务使用6GB）
-- 1GB以上可用磁盘空间
-
-## 快速部署
-
-### 1. 安装Docker和Docker Compose
-
-```bash
-# 更新系统
-sudo apt update
-sudo apt upgrade -y
-
-# 安装必要工具
-sudo apt install -y ca-certificates curl gnupg
-
-# 添加Docker官方GPG密钥
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-# 添加Docker仓库
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# 安装Docker
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-# 将当前用户添加到docker组
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-### 2. 准备项目
+### 服务管理
 
 ```bash
 # 创建项目目录
