@@ -151,17 +151,23 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			m.mu.Lock()
 			// 只有新内容才处理
 			if !strings.Contains(answer, res) {
-				if answer != "" {
-					answer += "\n"
+				// 添加新内容到累积答案
+				if answer == "" {
+					answer = res
+				} else {
+					// 确保新内容是前一次更新的前缀
+					// 不添加换行符，保持前缀关系
+					answer = answer + " " + res
 				}
-				answer += res
 				
-				// 直接使用流式更新API
+				// 使用流式更新API
 				currentAnswer := answer
 				go func(content string) {
 					if err := updateTextCard(ctx, content, cardId); err != nil {
 						log.Printf("Failed to update card: %v", err)
 					}
+					// 添加小延迟，让打字机效果更明显
+					time.Sleep(50 * time.Millisecond)
 				}(currentAnswer)
 			}
 			m.mu.Unlock()
