@@ -745,6 +745,21 @@ func withHeader(title string, color string) *larkcard.MessageCardHeader {
 
 // withNote 用于生成纯文本脚注
 func withNote(note string) larkcard.MessageCardElement {
+	noteElement := larkcard.NewMessageCardNote().
+		Elements([]larkcard.MessageCardNoteElement{larkcard.NewMessageCardPlainText().
+			Content(note).
+			Build()}).
+		Build()
+	return noteElement
+}
+
+// withPicResolutionBtn 用于生成图片分辨率按钮
+func withPicResolutionBtn(sessionID *string) larkcard.MessageCardElement {
+	cancelMenu := newMenu("默认分辨率",
+		map[string]interface{}{
+			"value":     "0",
+			"kind":      PicResolutionKind,
+			"sessionId": *sessionID,
 			"msgId":     *sessionID,
 		},
 		MenuOption{
@@ -1051,11 +1066,18 @@ func sendImageCard(ctx context.Context, imageKey string, msgId *string, sessionI
 
 // 更新卡片文本内容
 func updateTextCard(ctx context.Context, msg string, cardInfo *CardInfo) error {
+	log.Printf("Updating card text: cardId=%s, elementId=%s, contentLength=%d", 
+		cardInfo.CardEntityId, cardInfo.ElementId, len(msg))
+	
 	// 使用卡片实体ID和元素ID更新卡片内容
 	err := streamUpdateText(ctx, cardInfo.CardEntityId, cardInfo.ElementId, msg)
 	if err != nil {
+		log.Printf("Error in updateTextCard: %v", err)
 		return fmt.Errorf("failed to stream update text: %w", err)
 	}
+	
+	log.Printf("Successfully updated card text: cardId=%s, elementId=%s", 
+		cardInfo.CardEntityId, cardInfo.ElementId)
 	return nil
 }
 
