@@ -1284,53 +1284,66 @@ func getChatIdFromMsgId(ctx context.Context, msgId *string) string {
 
 // 发送处理中卡片
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
+	log.Printf("Sending processing card for message ID: %s", *msgId)
+	
 	// 创建一个简单的卡片内容
 	content := "正在思考中，请稍等..."
 	
-	// 创建卡片实体
-	cardEntityId, err := createCardEntity(ctx, content)
+	// 创建卡片JSON
+	cardJSON := map[string]interface{}{
+		"elements": []map[string]interface{}{
+			{
+				"tag": "markdown",
+				"content": content,
+				"text_align": "left",
+				"element_id": "content_block",
+			},
+			{
+				"tag": "note",
+				"elements": []map[string]interface{}{
+					{
+						"tag": "plain_text",
+						"content": "正在处理中，请稍等...",
+					},
+				},
+			},
+		},
+		"config": map[string]interface{}{
+			"streaming_mode": true,
+			"update_multi": true,
+		},
+	}
+	
+	// 序列化卡片JSON
+	cardJSONStr, err := json.Marshal(cardJSON)
 	if err != nil {
-		log.Printf("Failed to create card entity: %v", err)
-		// 回退到原始方法
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+		log.Printf("Failed to marshal card JSON: %v", err)
+		return nil, fmt.Errorf("failed to marshal card JSON: %w", err)
 	}
 	
-	// 获取聊天ID
-	chatId := getChatIdFromMsgId(ctx, msgId)
-	if chatId == "" {
-		log.Printf("Failed to get chat ID from message ID, falling back to original method")
-		// 回退到原始方法
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
-	}
+	// 使用SDK回复消息
+	client := initialization.GetLarkClient()
+	resp, err := client.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
+		MessageId(*msgId).
+		Body(larkim.NewReplyMessageReqBodyBuilder().
+			MsgType(larkim.MsgTypeInteractive).
+			Uuid(uuid.New().String()).
+			Content(string(cardJSONStr)).
+			Build()).
+		Build())
 	
-	// 发送卡片实体
-	messageId, err := sendCardEntity(ctx, cardEntityId, chatId)
 	if err != nil {
-		log.Printf("Failed to send card entity: %v", err)
-		// 回退到原始方法
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+		log.Printf("Failed to reply with card: %v", err)
+		return nil, fmt.Errorf("failed to reply with card: %w", err)
 	}
 	
-	log.Printf("Successfully sent card entity: cardId=%s, messageId=%s", cardEntityId, messageId)
-	
-	// 返回卡片信息
-	return &CardInfo{
-		CardEntityId: cardEntityId,
-		MessageId:    messageId,
-		ElementId:    "content_block",
-	}, nil
-}
-
-// 回退方法，使用原始的发送处理中卡片方法
-func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
-	log.Printf("Using fallback method for sending processing card")
-	messageId, err := sendOnProcessCardOriginal(ctx, sessionId, msgId)
-	if err != nil {
-		return nil, err
+	if !resp.Success() {
+		log.Printf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 	
-	// 直接使用消息ID作为卡片ID
-	log.Printf("Using message ID as card ID: %s", *messageId)
+	messageId := resp.Data.MessageId
+	log.Printf("Successfully sent card, message ID: %s", *messageId)
 	
 	// 返回卡片信息
 	return &CardInfo{
@@ -1338,22 +1351,6 @@ func sendOnProcessCardFallback(ctx context.Context, sessionId *string, msgId *st
 		MessageId:    *messageId,
 		ElementId:    "content_block",
 	}, nil
-}
-
-// 原始的发送处理中卡片方法（作为回退）
-func sendOnProcessCardOriginal(ctx context.Context, sessionId *string, msgId *string) (*string, error) {
-	content := "正在思考中，请稍等..."
-	card, err := newSendCardWithOutHeader(withMainText(content))
-	if err != nil {
-		return nil, err
-	}
-	
-	cardId, err := replyCardWithBackId(ctx, msgId, card)
-	if err != nil {
-		return nil, err
-	}
-	
-	return cardId, nil
 }
 
 // 这些函数已在 common.go 中定义，不需要重复定义
