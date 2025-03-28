@@ -8,6 +8,8 @@ RUN apk add --no-cache gcc musl-dev
 
 # 下载依赖并构建
 RUN go mod download
+# 显式安装缺失的依赖包
+RUN go get github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1
 RUN CGO_ENABLED=0 GOOS=linux go build -o feishu-bot
 
 FROM alpine:latest
