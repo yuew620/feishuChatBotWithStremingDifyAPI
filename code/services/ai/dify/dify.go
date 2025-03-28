@@ -78,14 +78,20 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		})
 	}
 
-	historyJSON, err := json.Marshal(messageHistory)
-	if err != nil {
-		return ai.NewError(ai.ErrInvalidMessage, "error marshaling message history", err)
+	var historyStr string
+	if len(messageHistory) > 0 {
+		historyJSON, err := json.Marshal(messageHistory)
+		if err != nil {
+			return ai.NewError(ai.ErrInvalidMessage, "error marshaling message history", err)
+		}
+		historyStr = string(historyJSON)
+	} else {
+		historyStr = "[]"  // Empty array for no history
 	}
 
 	reqBody := streamRequest{
 		Inputs: map[string]string{
-			"history": string(historyJSON),
+			"history": historyStr,
 		},
 		Query:           lastMsg.Content,
 		ResponseMode:    "streaming",
@@ -157,7 +163,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	apiURL := strings.TrimRight(d.config.GetApiUrl(), "/")
 	fullURL := fmt.Sprintf("%s/v1/chat-messages", apiURL)
 	
-	log.Printf("Making request to Dify API: %s", fullURL)
+	log.Printf("Making request to Dify API: %s (API Key: %s...)", fullURL, d.config.GetApiKey()[:10])
 	log.Printf("Request headers: Authorization: Bearer %s..., Content-Type: %s", 
 		d.config.GetApiKey()[:10], "application/json")
 	log.Printf("Request body: %s", string(jsonBody))
