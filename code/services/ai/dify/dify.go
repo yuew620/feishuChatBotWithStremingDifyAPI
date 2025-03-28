@@ -29,9 +29,8 @@ type DifyProvider struct {
 	conversationsMu sync.RWMutex
 	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
 	
-	// 用于累积内容的缓冲区
-	bufferMu      sync.Mutex
-	buffer        string
+	// 用于限制发送频率
+	rateLimitMu   sync.Mutex
 	lastSendTime  time.Time
 }
 
@@ -78,7 +77,6 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 		},
 		sentContent: make(map[string]bool),
 		conversations: make(map[string]conversationEntry),
-		buffer: "",
 		lastSendTime: time.Now(),
 	}
 	
@@ -332,6 +330,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 							return err
 						}
 					}
+					
 					return nil
 				}
 				return ai.NewError(ai.ErrInvalidResponse, "error reading stream", err)
@@ -479,32 +478,57 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 	return nil
 }
 
-// addToBufferAndSend 将内容添加到缓冲区，并在适当的时候发送到响应流
+// addToBufferAndSend 根据时间间隔和是否是最后一条消息决定是否发送内容
 func (d *DifyProvider) addToBufferAndSend(content string, responseStream chan string, ctx context.Context) error {
 	d.bufferMu.Lock()
 	defer d.bufferMu.Unlock()
 	
-	// 添加内容到缓冲区
-	if d.buffer == "" {
-		d.buffer = content
-	} else {
-		d.buffer = d.buffer + content
+	// 检查是否应该发送内容
+	now := time.Now()
+	shouldSend := now.Sub(d.lastSendTime) >= 20*time.Millisecond
+	
+	// 检查是否是最后一条消息（包含实际内容的消息）
+	isLastMessage := false
+	
+	// 如果内容中包含完整的句子或段落，可能是最后一条消息
+	if strings.Contains(content, "。") || strings.Contains(content, ".") || 
+	   strings.Contains(content, "!") || strings.Contains(content, "！") ||
+	   strings.Contains(content, "?") || strings.Contains(content, "？") {
+		isLastMessage = true
 	}
 	
-	// 检查是否应该发送缓冲区内容
-	now := time.Now()
-	if now.Sub(d.lastSendTime) >= 20*time.Millisecond {
-		// 已经过了20ms，发送缓冲区内容
-		if d.buffer != "" {
-			log.Printf("Sending buffered content to response stream: %s", d.buffer)
-			select {
-			case responseStream <- d.buffer:
-				// 发送成功，清空缓冲区并更新最后发送时间
-				d.buffer = ""
-				d.lastSendTime = now
-			default:
-				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
-			}
+	// 如果应该发送（时间间隔大于20ms）或者是最后一条消息，则发送
+	if shouldSend || isLastMessage {
+		log.Printf("Sending content to response stream: %s", content)
+		select {
+		case responseStream <- content:
+			// 发送成功，更新最后发送时间
+			d.lastSendTime = now
+		default:
+			return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
+		}
+	} else {
+		log.Printf("Skipping content due to rate limiting: %s", content)
+	}
+	
+	return nil
+}
+
+// flushBuffer 发送缓冲区中剩余的内容
+func (d *DifyProvider) flushBuffer(responseStream chan string) error {
+	d.bufferMu.Lock()
+	defer d.bufferMu.Unlock()
+	
+	// 如果缓冲区有内容，发送出去
+	if d.buffer != "" {
+		log.Printf("Flushing buffer content to response stream: %s", d.buffer)
+		select {
+		case responseStream <- d.buffer:
+			// 发送成功，清空缓冲区并更新最后发送时间
+			d.buffer = ""
+			d.lastSendTime = time.Now()
+		default:
+			return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 		}
 	}
 	
