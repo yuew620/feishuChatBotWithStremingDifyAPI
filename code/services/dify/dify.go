@@ -6,18 +6,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"start-feishubot/initialization"
 	"strings"
+	"sync"
+	"time"
 )
+
+// 会话缓存条目
+type conversationEntry struct {
+	conversationID string
+	timestamp      time.Time
+}
 
 type DifyClient struct {
 	config *initialization.Config
+	
+	// 会话ID到Dify conversation ID的映射
+	conversationsMu sync.RWMutex
+	conversations   map[string]conversationEntry // sessionId -> {conversationId, timestamp}
 }
 
 type Messages struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	Metadata map[string]string `json:"metadata,omitempty"` // 添加元数据字段
 }
 
 type StreamRequest struct {
@@ -30,8 +44,10 @@ type StreamRequest struct {
 
 type StreamResponse struct {
 	Event string `json:"event"`
+	ConversationId string `json:"conversation_id,omitempty"` // 添加会话ID字段
 	Data  struct {
 		Text string `json:"text"`
+		ConversationId string `json:"conversation_id,omitempty"` // 有时会在data中返回会话ID
 	} `json:"data"`
 }
 
@@ -45,9 +61,41 @@ func mustMarshal(v interface{}) []byte {
 }
 
 func NewDifyClient(config *initialization.Config) *DifyClient {
-	return &DifyClient{
+	client := &DifyClient{
 		config: config,
+		conversations: make(map[string]conversationEntry),
 	}
+	
+	// 启动一个后台goroutine，定期清理过期的会话缓存
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour) // 每小时检查一次
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			client.cleanupConversations()
+		}
+	}()
+	
+	return client
+}
+
+// cleanupConversations 清理超过12小时的会话缓存
+func (d *DifyClient) cleanupConversations() {
+	d.conversationsMu.Lock()
+	defer d.conversationsMu.Unlock()
+	
+	now := time.Now()
+	expiredTime := now.Add(-12 * time.Hour) // 12小时过期
+	
+	// 遍历所有会话，删除过期的
+	for sessionID, entry := range d.conversations {
+		if entry.timestamp.Before(expiredTime) {
+			delete(d.conversations, sessionID)
+			log.Printf("Cleaned up expired conversation for session %s", sessionID)
+		}
+	}
+	
+	log.Printf("Conversation cache cleanup completed, remaining entries: %d", len(d.conversations))
 }
 
 func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, responseStream chan string) error {
@@ -63,6 +111,41 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 			"content": msg.Content,
 		})
 	}
+	
+	// 从最后一条消息中提取会话ID
+	sessionID := ""
+	if lastMsg.Metadata != nil {
+		if id, ok := lastMsg.Metadata["session_id"]; ok && id != "" {
+			sessionID = id
+			log.Printf("Found session_id from metadata: %s", sessionID)
+		}
+	}
+	
+	// 如果没有找到session_id，记录日志
+	if sessionID == "" {
+		log.Printf("No session_id found in message metadata")
+	}
+	
+	// 检查是否有缓存的conversation_id
+	conversationID := ""
+	if sessionID != "" {
+		// 从缓存中获取conversation_id
+		d.conversationsMu.RLock()
+		if entry, ok := d.conversations[sessionID]; ok {
+			conversationID = entry.conversationID
+			log.Printf("Using cached conversation_id for session %s: %s", sessionID, conversationID)
+		}
+		d.conversationsMu.RUnlock()
+	}
+	
+	// 从最后一条消息中提取用户ID
+	userID := "feishu-bot" // 默认值
+	if lastMsg.Metadata != nil {
+		if id, ok := lastMsg.Metadata["user_id"]; ok && id != "" {
+			userID = id
+			log.Printf("Using user_id from metadata: %s", userID)
+		}
+	}
 
 	reqBody := StreamRequest{
 		Inputs: map[string]string{
@@ -70,8 +153,8 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		},
 		Query:           lastMsg.Content,
 		ResponseMode:    "streaming",
-		ConversationId:  "",
-		User:            "feishu-bot",
+		ConversationId:  conversationID,
+		User:            userID,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -84,7 +167,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	apiUrl := fmt.Sprintf("%s/v1/chat-messages", baseUrl)
 
 	// 打印请求详情
-	fmt.Printf("Sending request to Dify:\nURL: %s\nHeaders: %v\nBody: %s\n", 
+	log.Printf("Sending request to Dify:\nURL: %s\nHeaders: %v\nBody: %s\n", 
 		apiUrl,
 		map[string]string{
 			"Content-Type": "application/json",
@@ -113,7 +196,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	defer resp.Body.Close()
 
 	// 打印响应状态码和头部
-	fmt.Printf("Dify response:\nStatus: %s\nHeaders: %v\n", 
+	log.Printf("Dify response:\nStatus: %s\nHeaders: %v\n", 
 		resp.Status, 
 		resp.Header)
 
@@ -146,7 +229,35 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		data := strings.TrimPrefix(line, "data: ")
 		var streamResp StreamResponse
 		if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-			return fmt.Errorf("error unmarshaling response: %v", err)
+			// 尝试处理特殊格式
+			if strings.Contains(data, "[DONE]") {
+				return nil // 正常结束
+			}
+			log.Printf("Error unmarshaling response: %v, data: %s", err, data)
+			continue // 继续处理其他行
+		}
+		
+		// 提取conversation_id并存储到缓存中
+		if sessionID != "" {
+			// 首先检查响应中是否包含conversation_id
+			respConversationID := streamResp.ConversationId
+			if respConversationID == "" {
+				respConversationID = streamResp.Data.ConversationId
+			}
+			
+			// 如果找到了conversation_id，存储到缓存中
+			if respConversationID != "" && respConversationID != conversationID {
+				d.conversationsMu.Lock()
+				d.conversations[sessionID] = conversationEntry{
+					conversationID: respConversationID,
+					timestamp:      time.Now(),
+				}
+				d.conversationsMu.Unlock()
+				log.Printf("Stored conversation_id %s for session %s", respConversationID, sessionID)
+				
+				// 更新当前使用的conversation_id
+				conversationID = respConversationID
+			}
 		}
 
 		// 处理不同的事件类型
