@@ -7,12 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"sync/atomic"
 	"github.com/google/uuid"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 )
@@ -47,41 +46,26 @@ func getNextSequence() int64 {
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
 	client := initialization.GetLarkClient()
 	
-	// 构建请求URL
-	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/elements/%s/content", cardId, elementId)
-	
-	// 构建请求体
-	reqBody := map[string]interface{}{
-		"content":   content,
-		"sequence": getNextSequence(),
-	}
-	
-	jsonBody, err := json.Marshal(reqBody)
+	// 创建请求对象
+	req := larkcardkit.NewContentCardElementReqBuilder().
+		CardId(cardId).
+		ElementId(elementId).
+		Body(larkcardkit.NewContentCardElementReqBodyBuilder().
+			Uuid(uuid.New().String()). // 使用UUID保证幂等性
+			Content(content).
+			Sequence(getNextSequence()). // 使用原子计数器获取序列号
+			Build()).
+		Build()
+
+	// 发起请求
+	resp, err := client.Cardkit.V1.CardElement.Content(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return fmt.Errorf("failed to update card content: %w", err)
 	}
 
-	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// 设置请求头
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.GetTenantAccessToken()))
-
-	// 发送请求
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
+	// 服务端错误处理
+	if !resp.Success() {
+		return fmt.Errorf("API error: %s", resp.Msg)
 	}
 
 	return nil
