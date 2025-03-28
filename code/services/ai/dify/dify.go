@@ -22,11 +22,11 @@ type DifyProvider struct {
 
 // Dify API请求结构
 type streamRequest struct {
-	Query    string       `json:"query"`
-	Messages []ai.Message `json:"messages,omitempty"`
-	Stream   bool        `json:"stream"`
-	User     string      `json:"user,omitempty"`    // 可选的用户标识
-	Inputs   interface{} `json:"inputs,omitempty"`  // 可选的输入参数
+	Inputs          map[string]string `json:"inputs"`
+	Query           string            `json:"query"`
+	ResponseMode    string            `json:"response_mode"`
+	ConversationId  string            `json:"conversation_id"`
+	User            string            `json:"user"`
 }
 
 // Dify API响应结构
@@ -69,10 +69,28 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 	lastMsg := messages[len(messages)-1]
 	historicalMessages := messages[:len(messages)-1]
 	
+	// 构建消息历史
+	var messageHistory []map[string]string
+	for _, msg := range historicalMessages {
+		messageHistory = append(messageHistory, map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		})
+	}
+
+	historyJSON, err := json.Marshal(messageHistory)
+	if err != nil {
+		return ai.NewError(ai.ErrInvalidMessage, "error marshaling message history", err)
+	}
+
 	reqBody := streamRequest{
-		Query:    lastMsg.Content,
-		Messages: historicalMessages,
-		Stream:   true,
+		Inputs: map[string]string{
+			"history": string(historyJSON),
+		},
+		Query:           lastMsg.Content,
+		ResponseMode:    "streaming",
+		ConversationId:  "",
+		User:            "feishu-bot",
 	}
 
 	// 使用重试机制发送请求
@@ -135,8 +153,10 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	}
 
 	// 创建请求
+	// Ensure API URL doesn't end with slash
+	apiURL := strings.TrimRight(d.config.GetApiUrl(), "/")
 	req, err := http.NewRequestWithContext(ctx, "POST", 
-		fmt.Sprintf("%s/v1/chat-messages", d.config.GetApiUrl()), 
+		fmt.Sprintf("%s/api/chat-messages", apiURL), 
 		strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return ai.NewError(ai.ErrConnectionFailed, "error creating request", err)

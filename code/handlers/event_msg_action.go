@@ -63,6 +63,8 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	ctx, cancel := context.WithTimeout(*a.ctx, 30*time.Second)
 	defer cancel()
 
+	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
+
 	cardId, err := sendOnProcess(a)
 	if err != nil {
 		log.Printf("Failed to send processing card: %v", err)
@@ -88,6 +90,8 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 	// 获取并验证会话历史
 	messages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
+	log.Printf("Retrieved %d historical messages for session: %s", len(messages), *a.info.sessionId)
+	
 	aiMessages := make([]ai.Message, 0, len(messages)+1)
 	
 	// 转换并验证历史消息
@@ -115,13 +119,15 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 		defer close(done)
 		defer close(chatResponseStream)
 
-		if err := m.provider.StreamChat(ctx, aiMessages, chatResponseStream); err != nil {
-			select {
-			case errChan <- err:
-			default:
-			}
-			return
+	log.Printf("Sending request to AI provider with %d messages", len(aiMessages))
+	if err := m.provider.StreamChat(ctx, aiMessages, chatResponseStream); err != nil {
+		log.Printf("AI provider error: %v", err)
+		select {
+		case errChan <- err:
+		default:
 		}
+		return
+	}
 	}()
 
 	// 启动卡片更新协程
