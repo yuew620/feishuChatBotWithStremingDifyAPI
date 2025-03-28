@@ -34,6 +34,8 @@ type streamResponse struct {
 	Event string `json:"event"`
 	Data  struct {
 		Text      string            `json:"text"`
+		Answer    string            `json:"answer,omitempty"`  // Some events use answer field
+		Message   string            `json:"message,omitempty"` // Some events use message field
 		ErrorCode string            `json:"error_code,omitempty"`
 		Error     string            `json:"error,omitempty"`
 		Metadata  map[string]string `json:"metadata,omitempty"` // 元数据
@@ -257,12 +259,17 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 	}
 
 	data := strings.TrimPrefix(line, "data: ")
+	
+	// Log raw SSE data for debugging
+	log.Printf("Raw SSE data: %s", data)
+	
 	var streamResp streamResponse
 	if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
 		// 尝试处理特殊格式
 		if strings.Contains(data, "[DONE]") {
 			return nil // 正常结束
 		}
+		log.Printf("Error unmarshaling response: %v, data: %s", err, data)
 		return ai.NewError(ai.ErrInvalidResponse, "error unmarshaling response", err)
 	}
 
@@ -271,11 +278,20 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 
 	switch streamResp.Event {
 	case "message", "agent_message":
+		// Try different possible content fields
+		content := streamResp.Data.Text
+		if content == "" {
+			content = streamResp.Data.Answer
+		}
+		if content == "" {
+			content = streamResp.Data.Message
+		}
+
 		// 检查消息长度，避免超过飞书卡片限制
-		if len(streamResp.Data.Text) > 0 {
-			log.Printf("Sending text to response stream: %s", streamResp.Data.Text)
+		if len(content) > 0 {
+			log.Printf("Sending text to response stream: %s", content)
 			select {
-			case responseStream <- streamResp.Data.Text:
+			case responseStream <- content:
 			default:
 				return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
 			}
