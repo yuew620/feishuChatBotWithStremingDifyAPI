@@ -130,28 +130,6 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	}
 	}()
 
-	// 启动卡片更新协程
-	ticker := time.NewTicker(300 * time.Millisecond)  // 更新频率提高到300ms
-	defer ticker.Stop()
-
-	var updateBuffer strings.Builder  // 用于缓存更新内容
-	lastUpdate := time.Now()
-
-	updateChan := make(chan struct{}, 1)
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				select {
-				case updateChan <- struct{}{}:
-				default:
-				}
-			}
-		}
-	}()
-
 	// 主循环处理响应
 	for {
 		select {
@@ -169,36 +147,24 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 				return m.handleCompletion(ctx, a, cardId, answer, aiMessages)
 			}
 			noContentTimeout.Stop()
+			
 			m.mu.Lock()
-			// Only append if it's new content
+			// 只有新内容才处理
 			if !strings.Contains(answer, res) {
 				if answer != "" {
-					answer += "\n"  // Add newline between responses
+					answer += "\n"
 				}
 				answer += res
-				updateBuffer.WriteString(res)
 				
-				// 如果距离上次更新超过100ms或缓冲区超过50字符，就更新卡片
-				if time.Since(lastUpdate) > 100*time.Millisecond || updateBuffer.Len() > 50 {
-					currentAnswer := answer
-					updateBuffer.Reset()
-					lastUpdate = time.Now()
-					
-					// 异步更新卡片，避免阻塞主流程
-					go func(content string) {
-						if err := updateTextCard(ctx, content, cardId); err != nil {
-							log.Printf("Failed to update card: %v", err)
-						}
-					}(currentAnswer)
-				}
-			} else {
-				log.Printf("Skipping duplicate content in card update: %s", res)
+				// 直接使用流式更新API
+				currentAnswer := answer
+				go func(content string) {
+					if err := updateTextCard(ctx, content, cardId); err != nil {
+						log.Printf("Failed to update card: %v", err)
+					}
+				}(currentAnswer)
 			}
 			m.mu.Unlock()
-
-		case <-updateChan:
-			// No need to update here since we're updating immediately when receiving content
-			continue
 
 		case <-ctx.Done():
 			_ = updateFinalCard(ctx, "请求超时", cardId)

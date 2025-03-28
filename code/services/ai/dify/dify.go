@@ -174,7 +174,6 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	fullURL := fmt.Sprintf("%s/v1/chat-messages", apiURL)
 	
 	log.Printf("Making request to Dify API: %s", fullURL)
-	log.Printf("Request headers: Authorization: %s...", d.config.GetApiKey()[:10])
 	log.Printf("Request body: %s", string(jsonBody))
 	
 	req, err := http.NewRequestWithContext(ctx, "POST", 
@@ -184,12 +183,26 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 		return ai.NewError(ai.ErrConnectionFailed, "error creating request", err)
 	}
 
-	// 设置请求头
+	// 设置所有请求头
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", d.config.GetApiKey())  // Use raw API key without Bearer prefix
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
+	
+	// 智能处理API key格式
+	apiKey := d.config.GetApiKey()
+	if !strings.HasPrefix(apiKey, "Bearer ") && !strings.HasPrefix(apiKey, "bearer ") {
+		apiKey = "Bearer " + apiKey
+	}
+	req.Header.Set("Authorization", apiKey)
+	
+	// 记录完整的请求信息
+	log.Printf("Request headers: Authorization: %s...", apiKey[:10])
+	log.Printf("Full request URL: %s", fullURL)
+	log.Printf("Full request headers: Content-Type: %s, Accept: %s, Cache-Control: %s", 
+		req.Header.Get("Content-Type"), 
+		req.Header.Get("Accept"),
+		req.Header.Get("Cache-Control"))
 
 	// 发送请求
 	d.mu.RLock()
@@ -217,7 +230,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 
 	// 处理流式响应
 	reader := bufio.NewReader(resp.Body)
-	buffer := make([]byte, 1024) // 减小缓冲区大小以获得更频繁的更新
+	buffer := make([]byte, 512) // 进一步减小缓冲区大小以获得更频繁的更新
 	var partialLine string
 
 	for {
