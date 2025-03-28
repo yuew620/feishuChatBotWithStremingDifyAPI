@@ -31,6 +31,17 @@ type MessageHandler struct {
 	gpt         *openai.ChatGPT
 }
 
+// CardHandler 返回卡片处理函数
+func CardHandler() func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+		handler, err := NewMessageHandler(initialization.GetConfig())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create message handler: %v", err)
+		}
+		return handler.cardHandler(ctx, cardAction)
+	}
+}
+
 func (m MessageHandler) cardHandler(ctx context.Context,
 	cardAction *larkcard.CardAction) (interface{}, error) {
 	messageHandler := NewCardHandler(m)
