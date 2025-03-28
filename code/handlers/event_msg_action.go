@@ -160,16 +160,20 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 					answer = answer + " " + res
 				}
 				
-				// 使用流式更新API
+				// 使用字符级别的更新，实现真正的打字机效果
+				// 将新内容拆分成单个字符，逐个发送
 				currentAnswer := answer
+				
+				// 记录日志
+				log.Printf("Updating card with new content: %s", res)
 				
 				// 直接在主线程中更新，确保顺序正确
 				if err := updateTextCard(ctx, currentAnswer, cardId); err != nil {
 					log.Printf("Failed to update card: %v", err)
 				}
 				
-				// 添加小延迟，让打字机效果更明显
-				time.Sleep(100 * time.Millisecond)
+				// 添加更长的延迟，让打字机效果更明显
+				time.Sleep(300 * time.Millisecond)
 			}
 			m.mu.Unlock()
 

@@ -115,6 +115,11 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 		"uuid":     uuid.New().String(), // 使用UUID保证幂等性
 		"content":  content,
 		"sequence": getNextSequence(), // 使用原子计数器获取序列号
+		// 添加7.23及以上版本支持的参数
+		"update_strategy": map[string]interface{}{
+			"mode": "typewriter", // 打字机模式
+			"speed": 100, // 速度，每分钟字数
+		},
 	}
 	
 	jsonBody, err := json.Marshal(reqBody)
