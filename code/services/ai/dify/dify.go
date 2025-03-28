@@ -31,8 +31,9 @@ type streamRequest struct {
 
 // Dify API响应结构
 type streamResponse struct {
-	Event string `json:"event"`
-	Data  struct {
+	Event      string            `json:"event"`
+	Thought    string            `json:"thought,omitempty"`    // agent_thought events use this field
+	Data       struct {
 		Text      string            `json:"text"`
 		Answer    string            `json:"answer,omitempty"`  // Some events use answer field
 		Message   string            `json:"message,omitempty"` // Some events use message field
@@ -277,7 +278,7 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 	log.Printf("Received SSE event: %s with text: %s", streamResp.Event, streamResp.Data.Text)
 
 	switch streamResp.Event {
-	case "message", "agent_message":
+	case "message", "agent_message", "agent_thought":
 		// Try different possible content fields
 		content := streamResp.Data.Text
 		if content == "" {
@@ -285,6 +286,9 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 		}
 		if content == "" {
 			content = streamResp.Data.Message
+		}
+		if content == "" && streamResp.Event == "agent_thought" {
+			content = streamResp.Thought
 		}
 
 		// 检查消息长度，避免超过飞书卡片限制
