@@ -162,13 +162,14 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 				
 				// 使用流式更新API
 				currentAnswer := answer
-				go func(content string) {
-					if err := updateTextCard(ctx, content, cardId); err != nil {
-						log.Printf("Failed to update card: %v", err)
-					}
-					// 添加小延迟，让打字机效果更明显
-					time.Sleep(50 * time.Millisecond)
-				}(currentAnswer)
+				
+				// 直接在主线程中更新，确保顺序正确
+				if err := updateTextCard(ctx, currentAnswer, cardId); err != nil {
+					log.Printf("Failed to update card: %v", err)
+				}
+				
+				// 添加小延迟，让打字机效果更明显
+				time.Sleep(100 * time.Millisecond)
 			}
 			m.mu.Unlock()
 
