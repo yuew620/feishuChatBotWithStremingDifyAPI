@@ -142,6 +142,20 @@ tail -f logs/app.log
 - 事件订阅：`http(s)://your-domain:9000/webhook/event`
 - 卡片回调：`http(s)://your-domain:9000/webhook/card`
 
+测试方法：
+```bash
+# 测试URL验证
+curl -X POST http://localhost:9000/webhook/event \
+  -H "Content-Type: application/json" \
+  -H "X-Lark-Request-Type: URL_VERIFICATION" \
+  -d '{"challenge": "test123", "token": "test", "type": "url_verification"}'
+
+# 预期返回
+{
+    "challenge": "test123"
+}
+```
+
 注意事项：
 1. 确保配置了正确的 Verification Token 和 Encrypt Key
 2. 建议在生产环境使用 HTTPS

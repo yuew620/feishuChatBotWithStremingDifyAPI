@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"github.com/gin-gonic/gin"
+	"io"
 	"log"
 	"net/http"
 )
@@ -17,14 +19,32 @@ type UrlVerification struct {
 func HandleUrlVerification(c *gin.Context) bool {
 	if c.Request.Header.Get("X-Lark-Request-Type") == "URL_VERIFICATION" {
 		log.Printf("Received URL verification request")
+		
+		// Read raw body
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			log.Printf("Failed to read request body: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request"})
+			return true
+		}
+		
+		// Log the raw request for debugging
+		log.Printf("Raw verification request: %s", string(body))
+		
 		var event UrlVerification
-		if err := c.ShouldBindJSON(&event); err != nil {
+		if err := json.Unmarshal(body, &event); err != nil {
 			log.Printf("Failed to parse URL verification request: %v", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return true
 		}
-		log.Printf("Responding to URL verification with challenge: %s", event.Challenge)
-		c.JSON(http.StatusOK, gin.H{"challenge": event.Challenge})
+		
+		// Return the exact same format as received
+		response := map[string]interface{}{
+			"challenge": event.Challenge,
+		}
+		
+		log.Printf("Responding to URL verification with: %+v", response)
+		c.JSON(http.StatusOK, response)
 		return true
 	}
 	return false
