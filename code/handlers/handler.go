@@ -6,10 +6,10 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services"
 	"start-feishubot/services/ai"
+	"start-feishubot/services/openai"
 	"strings"
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
-
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -28,6 +28,7 @@ type MessageHandler struct {
 	msgCache     services.MsgCacheInterface
 	aiProvider   ai.Provider
 	config       initialization.Config
+	gpt         *openai.ChatGPT
 }
 
 func (m MessageHandler) cardHandler(ctx context.Context,
@@ -112,11 +113,13 @@ func NewMessageHandler(config initialization.Config) (MessageHandlerInterface, e
 		return nil, fmt.Errorf("failed to initialize AI provider: %v", err)
 	}
 	
+	gpt := openai.NewChatGPT(config.AIApiKey, config.AIApiUrl, config.AIModel)
 	return &MessageHandler{
 		sessionCache: services.GetSessionCache(),
 		msgCache:     services.GetMsgCache(),
 		aiProvider:   provider,
 		config:       config,
+		gpt:         gpt,
 	}, nil
 }
 

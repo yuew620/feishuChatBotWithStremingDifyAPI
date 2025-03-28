@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sort"
 	"start-feishubot/services/ai"
+	"start-feishubot/services/openai"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,7 @@ type SessionMeta struct {
 	MessageNum int         `json:"message_num"` 
 	Size       int64       `json:"size"`        // 会话大小（字节）
 	PicResolution string    `json:"pic_resolution,omitempty"` // 图片分辨率设置
+	SystemMsg []openai.Messages `json:"system_msg,omitempty"` // 系统消息
 }
 
 // SessionService 会话服务
@@ -85,6 +87,7 @@ type SessionServiceCacheInterface interface {
 	GetStats() SessionStats
 	SetPicResolution(sessionId string, resolution string)
 	GetPicResolution(sessionId string) string
+	SetMsg(sessionId string, msg []openai.Messages)
 }
 
 var (
@@ -381,6 +384,26 @@ func (s *SessionService) periodicCleanup() {
 	for range ticker.C {
 		s.CleanExpiredSessions()
 	}
+}
+
+// SetMsg 设置系统消息
+func (s *SessionService) SetMsg(sessionId string, msg []openai.Messages) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		sessionMeta := &SessionMeta{
+			UpdatedAt: time.Now(),
+			SystemMsg: msg,
+		}
+		s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+		return
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta.UpdatedAt = time.Now()
+	sessionMeta.SystemMsg = msg
+	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
 }
 
 func (s *SessionService) monitorMemory() {

@@ -27,18 +27,20 @@ type MessageHandlerInterface interface {
 	judgeIfMentionMe(mention []*larkim.MentionEvent) bool
 }
 
-// Resolution 图片分辨率类型
-type Resolution string
+// 判断聊天类型
+func judgeChatType(event *larkim.P2MessageReceiveV1) HandlerType {
+	chatType := event.Event.Message.ChatType
+	switch *chatType {
+	case "group":
+		return GroupHandler
+	case "p2p":
+		return PrivateHandler
+	default:
+		return OtherHandler
+	}
+}
 
-const (
-	Resolution256  Resolution = "256x256"
-	Resolution512  Resolution = "512x512"
-	Resolution1024 Resolution = "1024x1024"
-)
-
-// 扩展 SessionServiceCacheInterface 接口
-type ExtendedSessionServiceCacheInterface interface {
-	services.SessionServiceCacheInterface
-	SetPicResolution(sessionId string, resolution Resolution)
-	GetPicResolution(sessionId string) Resolution
+// UserHandler 用户处理器类型
+type UserHandler struct {
+	MessageHandlerInterface
 }

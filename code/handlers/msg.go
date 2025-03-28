@@ -382,15 +382,15 @@ func withPicResolutionBtn(sessionID *string) larkcard.
 		},
 		MenuOption{
 			label: "256x256",
-			value: string(services.Resolution256),
+			value: "256x256",
 		},
 		MenuOption{
 			label: "512x512",
-			value: string(services.Resolution512),
+			value: "512x512",
 		},
 		MenuOption{
 			label: "1024x1024",
-			value: string(services.Resolution1024),
+			value: "1024x1024",
 		},
 	)
 
