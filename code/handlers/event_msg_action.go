@@ -194,14 +194,19 @@ func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, car
 	}
 
 	// 添加AI回复到会话历史
-	aiMessages = append(aiMessages, ai.Message{
-		Role:    "assistant",
-		Content: answer,
-	})
+	if answer != "" {
+		aiMessages = append(aiMessages, ai.Message{
+			Role:    "assistant",
+			Content: answer,
+		})
 
-	// 保存会话消息
-	if err := a.handler.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages); err != nil {
-		log.Printf("Failed to save session messages: %v", err)
+		// 保存会话消息
+		if err := a.handler.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages); err != nil {
+			log.Printf("Failed to save session messages: %v", err)
+		}
+	} else {
+		log.Printf("Empty response from AI provider, not saving to session history")
+		return false
 	}
 
 	// 记录成功日志

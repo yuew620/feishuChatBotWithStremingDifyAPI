@@ -266,10 +266,14 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 		return ai.NewError(ai.ErrInvalidResponse, "error unmarshaling response", err)
 	}
 
+	// Log the raw response for debugging
+	log.Printf("Received SSE event: %s with text: %s", streamResp.Event, streamResp.Data.Text)
+
 	switch streamResp.Event {
-	case "message":
+	case "message", "agent_message":
 		// 检查消息长度，避免超过飞书卡片限制
 		if len(streamResp.Data.Text) > 0 {
+			log.Printf("Sending text to response stream: %s", streamResp.Data.Text)
 			select {
 			case responseStream <- streamResp.Data.Text:
 			default:
@@ -286,13 +290,13 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string) e
 		return ai.NewError(ai.ErrInvalidResponse, 
 			fmt.Sprintf("stream error: %s", streamResp.Data.Text), 
 			nil)
-	case "done":
+	case "done", "message_end":
 		return nil
-	case "ping":
-		// 心跳事件，忽略
+	case "ping", "agent_thought":
+		// 忽略这些事件类型
 		return nil
 	default:
-		log.Printf("Unknown event type: %s", streamResp.Event)
+		log.Printf("Unknown event type: %s with text: %s", streamResp.Event, streamResp.Data.Text)
 		return nil // 不中断流处理
 	}
 
