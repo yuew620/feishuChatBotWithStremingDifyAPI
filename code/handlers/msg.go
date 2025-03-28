@@ -362,30 +362,39 @@ type CardInfo struct {
 
 // 流式更新文本内容
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
+	log.Printf("Attempting to update card: cardId=%s, elementId=%s, contentLength=%d", cardId, elementId, len(content))
+	
 	// 获取tenant_access_token
 	token, err := getTenantAccessToken(ctx)
 	if err != nil {
+		log.Printf("Failed to get tenant_access_token: %v", err)
 		return fmt.Errorf("failed to get tenant_access_token: %w", err)
 	}
 	
 	// 构建请求体
+	sequence := getNextSequence()
+	reqUuid := uuid.New().String()
 	reqBody := map[string]interface{}{
 		"content":  content,
-		"sequence": getNextSequence(), // 使用原子计数器获取序列号
-		"uuid":     uuid.New().String(), // 使用UUID保证幂等性
+		"sequence": sequence,
+		"uuid":     reqUuid,
 	}
 	
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
+		log.Printf("Failed to marshal request body: %v", err)
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
 	// 构建请求URL - 使用正确的API路径
 	url := fmt.Sprintf("https://open.feishu.cn/open-apis/cardkit/v1/cards/%s/elements/%s/content", cardId, elementId)
+	log.Printf("Making request to URL: %s", url)
+	log.Printf("Request body: sequence=%d, uuid=%s, contentLength=%d", sequence, reqUuid, len(content))
 	
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewReader(jsonBody))
 	if err != nil {
+		log.Printf("Failed to create request: %v", err)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -396,6 +405,7 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 	// 发送请求
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Printf("Failed to send request: %v", err)
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -403,9 +413,14 @@ func streamUpdateText(ctx context.Context, cardId string, elementId string, cont
 	// 检查响应状态
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("API error: status=%d, body=%s", resp.StatusCode, string(body))
 		return fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
 	}
 
+	// 读取并记录响应
+	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("Card update successful: status=%d, response=%s", resp.StatusCode, string(respBody))
+	
 	return nil
 }
 
@@ -730,21 +745,6 @@ func withHeader(title string, color string) *larkcard.MessageCardHeader {
 
 // withNote 用于生成纯文本脚注
 func withNote(note string) larkcard.MessageCardElement {
-	noteElement := larkcard.NewMessageCardNote().
-		Elements([]larkcard.MessageCardNoteElement{larkcard.NewMessageCardPlainText().
-			Content(note).
-			Build()}).
-		Build()
-	return noteElement
-}
-
-// withPicResolutionBtn 用于生成图片分辨率按钮
-func withPicResolutionBtn(sessionID *string) larkcard.MessageCardElement {
-	cancelMenu := newMenu("默认分辨率",
-		map[string]interface{}{
-			"value":     "0",
-			"kind":      PicResolutionKind,
-			"sessionId": *sessionID,
 			"msgId":     *sessionID,
 		},
 		MenuOption{

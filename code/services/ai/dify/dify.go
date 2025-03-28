@@ -3,8 +3,10 @@ package dify
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"log"
 	"net/http"
@@ -99,19 +101,38 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 		historyStr = "[]"  // Empty array for no history
 	}
 
-	// 从最后一条消息中提取会话ID作为Dify的conversation_id
-	conversationID := ""
+	// 从最后一条消息中提取会话ID
+	sessionID := ""
 	if lastMsg.Metadata != nil {
 		if id, ok := lastMsg.Metadata["session_id"]; ok && id != "" {
-			conversationID = id
+			sessionID = id
 		}
 	}
 	
 	// 如果没有找到session_id，记录日志
-	if conversationID == "" {
-		log.Printf("No session_id found in message metadata, using empty string as conversation_id")
+	if sessionID == "" {
+		log.Printf("No session_id found in message metadata")
 	} else {
-		log.Printf("Using session_id from metadata as conversation_id: %s", conversationID)
+		log.Printf("Found session_id from metadata: %s", sessionID)
+	}
+	
+	// 为Dify生成一个有效的UUID作为conversation_id
+	// 我们使用会话ID的哈希值来生成一个确定性的UUID
+	// 这样同一个会话的消息会使用相同的conversation_id
+	conversationID := ""
+	if sessionID != "" {
+		// 使用会话ID的哈希值生成UUID的前16个字节
+		h := sha256.New()
+		h.Write([]byte(sessionID))
+		hash := h.Sum(nil)
+		
+		// 创建一个版本4的UUID (随机UUID)
+		u := uuid.New()
+		// 用哈希值的前16个字节替换UUID的字节
+		copy(u[:], hash[:16])
+		
+		conversationID = u.String()
+		log.Printf("Generated conversation_id from session_id: %s", conversationID)
 	}
 	
 	// 从最后一条消息中提取用户ID
