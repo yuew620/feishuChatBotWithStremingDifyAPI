@@ -1283,33 +1283,36 @@ func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*
 		return nil, fmt.Errorf("failed to create card entity: %w", err)
 	}
 	
-	// 获取聊天ID
+	// 直接使用回复方式，不需要获取聊天ID
+	log.Printf("Using reply method for sending card entity")
+	
+	// 使用SDK回复消息
 	client := initialization.GetLarkClient()
-	resp, err := client.Im.Message.Get(ctx, larkim.NewGetMessageReqBuilder().
+	resp, err := client.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
 		MessageId(*msgId).
+		Body(larkim.NewReplyMessageReqBodyBuilder().
+			MsgType(larkim.MsgTypeInteractive).
+			Uuid(uuid.New().String()).
+			Content(fmt.Sprintf("{\"type\":\"card\",\"data\":{\"card_id\":\"%s\"}}", cardEntityId)).
+			Build()).
 		Build())
 	
-	if err != nil || !resp.Success() {
-		log.Printf("Failed to get message info: %v", err)
-		// 回退到使用SDK回复消息
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
-	}
-	
-	chatId := resp.Data.Message.ChatId
-	if chatId == "" {
-		log.Printf("Failed to get chat ID from message")
-		// 回退到使用SDK回复消息
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
-	}
-	
-	// 步骤二：发送卡片实体
-	messageId, err := sendCardEntity(ctx, cardEntityId, chatId)
 	if err != nil {
-		log.Printf("Failed to send card entity: %v", err)
+		log.Printf("Failed to reply with card entity: %v", err)
 		// 回退到使用SDK回复消息
 		return sendOnProcessCardFallback(ctx, sessionId, msgId)
 	}
 	
+	if !resp.Success() {
+		log.Printf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
+		// 回退到使用SDK回复消息
+		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	}
+	
+	messageId := *resp.Data.MessageId
+	log.Printf("Successfully sent card entity using reply method, message ID: %s", messageId)
+	
+	// 已经通过回复方式发送了卡片实体，不需要再次发送
 	log.Printf("Successfully created and sent card entity: cardId=%s, messageId=%s", cardEntityId, messageId)
 	
 	// 返回卡片信息
