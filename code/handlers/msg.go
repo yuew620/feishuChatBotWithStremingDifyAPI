@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 )
