@@ -424,23 +424,28 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 		// 只处理 agent_message 事件
 		var content string
 		if streamResp.Answer != "" {
-			content = streamResp.Answer
-			log.Printf("Using top-level Answer field: %s", content)
+			// 去除内容前后的空格
+			content = strings.TrimSpace(streamResp.Answer)
+			log.Printf("Using top-level Answer field (trimmed): %s", content)
 			
 			// 只有当 answer 不为空时，才添加到缓冲区并发送
-			if d.sentContent[content] {
-				log.Printf("Skipping duplicate content: %s", content)
-			} else {
-				log.Printf("Adding content to buffer: %s", content)
-				d.sentContent[content] = true
-				
-				// 添加内容到缓冲区
-				d.addToBuffer(content)
-				
-				// 尝试发送缓冲区内容
-				if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
-					return err
+			if content != "" {
+				if d.sentContent[content] {
+					log.Printf("Skipping duplicate content: %s", content)
+				} else {
+					log.Printf("Adding content to buffer: %s", content)
+					d.sentContent[content] = true
+					
+					// 添加内容到缓冲区
+					d.addToBuffer(content)
+					
+					// 尝试发送缓冲区内容
+					if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
+						return err
+					}
 				}
+			} else {
+				log.Printf("Skipping empty answer after trimming in agent_message event")
 			}
 		} else {
 			log.Printf("Skipping empty answer in agent_message event")
