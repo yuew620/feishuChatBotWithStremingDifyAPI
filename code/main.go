@@ -72,7 +72,25 @@ func main() {
 		})
 	})
 	r.POST("/webhook/event", func(c *gin.Context) {
-		log.Printf("Received webhook request with type: %s", c.Request.Header.Get("X-Lark-Request-Type"))
+		// Log all headers
+		log.Printf("Request Headers:")
+		for key, values := range c.Request.Header {
+			log.Printf("%s: %v", key, values)
+		}
+
+		// Read and log request body
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			log.Printf("Error reading request body: %v", err)
+			return
+		}
+		log.Printf("Request Body: %s", string(body))
+		
+		// Restore body for later use
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+		
+		reqType := c.Request.Header.Get("X-Lark-Request-Type")
+		log.Printf("Received webhook request with type: %s", reqType)
 		
 		// Handle URL verification first
 		if handlers.HandleUrlVerification(c) {
