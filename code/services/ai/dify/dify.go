@@ -505,9 +505,9 @@ func (d *DifyProvider) sendBufferWithRateLimit(responseStream chan string, isMes
 	
 	// 检查是否应该发送内容
 	now := time.Now()
-	shouldSend := now.Sub(d.lastSendTime) >= 100*time.Millisecond
+	shouldSend := now.Sub(d.lastSendTime) >= 50*time.Millisecond
 	
-	// 如果应该发送（时间间隔大于100ms）或者是消息结束，则发送
+	// 如果应该发送（时间间隔大于50ms）或者是消息结束，则发送
 	if shouldSend || isMessageEnd {
 		log.Printf("Sending buffered content to response stream: %s", d.buffer)
 		log.Printf("Sending buffer hex: %x", d.buffer)
