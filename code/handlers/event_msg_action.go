@@ -129,31 +129,28 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			noContentTimeout.Stop()
 			
 			m.mu.Lock()
-			// 只有新内容才处理
-			if !strings.Contains(answer, res) {
-				// 添加新内容到累积答案
-				if answer == "" {
-					answer = res
-				} else {
-					// 确保新内容是前一次更新的前缀
-					// 不添加换行符，保持前缀关系
-					answer = answer + " " + res
-				}
-				
-				// 使用流式更新API更新卡片内容
-				currentAnswer := answer
-				
-				// 记录日志
-				log.Printf("Updating card with new content: %s", res)
-				
-				// 直接在主线程中更新，确保顺序正确
-				if err := updateTextCard(ctx, currentAnswer, cardInfo); err != nil {
-					log.Printf("Failed to update card: %v", err)
-				}
-				
-				// 添加小延迟，让打字机效果更明显但保持较快的响应速度
-				time.Sleep(10 * time.Millisecond)
+			// 处理所有收到的内容，不再检查是否包含
+			// 添加新内容到累积答案
+			if answer == "" {
+				answer = res
+			} else {
+				// 确保新内容是前一次更新的前缀
+				// 不添加换行符，保持前缀关系
+				answer = answer + " " + res
 			}
+			
+			// 使用流式更新API更新卡片内容
+			currentAnswer := answer
+			
+			// 记录日志
+			log.Printf("Updating card with new content: %s", res)
+			
+			// 直接在主线程中更新，确保顺序正确
+			if err := updateTextCard(ctx, currentAnswer, cardInfo); err != nil {
+				log.Printf("Failed to update card: %v", err)
+			}
+			
+			// 不再添加延迟，让更新速度最大化
 			m.mu.Unlock()
 
 		case <-ctx.Done():
