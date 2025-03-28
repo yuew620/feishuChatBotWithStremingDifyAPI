@@ -155,8 +155,15 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	// 创建请求
 	// Ensure API URL doesn't end with slash
 	apiURL := strings.TrimRight(d.config.GetApiUrl(), "/")
+	fullURL := fmt.Sprintf("%s/api/chat-messages", apiURL)
+	
+	log.Printf("Making request to Dify API: %s", fullURL)
+	log.Printf("Request headers: Authorization: Bearer %s..., Content-Type: %s", 
+		d.config.GetApiKey()[:10], "application/json")
+	log.Printf("Request body: %s", string(jsonBody))
+	
 	req, err := http.NewRequestWithContext(ctx, "POST", 
-		fmt.Sprintf("%s/api/chat-messages", apiURL), 
+		fullURL,
 		strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return ai.NewError(ai.ErrConnectionFailed, "error creating request", err)
@@ -185,10 +192,13 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Dify API error response: Status: %d, Body: %s", resp.StatusCode, string(body))
 		return ai.NewError(ai.ErrInvalidResponse, 
 			fmt.Sprintf("unexpected status code: %d, body: %s", resp.StatusCode, string(body)), 
 			nil)
 	}
+	
+	log.Printf("Successfully connected to Dify API, starting to process stream")
 
 	// 处理流式响应
 	reader := bufio.NewReader(resp.Body)
