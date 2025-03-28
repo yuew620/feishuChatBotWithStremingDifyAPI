@@ -10,7 +10,6 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
-	"start-feishubot/services"
 	"start-feishubot/services/openai"
 )
 

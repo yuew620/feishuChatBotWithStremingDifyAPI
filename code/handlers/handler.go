@@ -113,7 +113,7 @@ func NewMessageHandler(config initialization.Config) (MessageHandlerInterface, e
 		return nil, fmt.Errorf("failed to initialize AI provider: %v", err)
 	}
 	
-	gpt := openai.NewChatGPT(config.AIApiKey, config.AIApiUrl, config.AIModel)
+	gpt := openai.NewChatGPT(config)
 	return &MessageHandler{
 		sessionCache: services.GetSessionCache(),
 		msgCache:     services.GetMsgCache(),

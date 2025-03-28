@@ -47,7 +47,7 @@ type ProcessMentionAction struct { //是否机器人应该处理
 
 func (*ProcessMentionAction) Execute(a *ActionInfo) bool {
 	// 私聊直接过
-	if a.info.handlerType == UserHandler {
+	if a.info.handlerType == PrivateHandler {
 		return true
 	}
 	// 群聊判断是否提到机器人

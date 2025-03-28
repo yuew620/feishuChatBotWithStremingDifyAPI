@@ -57,7 +57,7 @@ func (m *MessageHandler) CommonProcessPicMore(msg CardMsg) {
 	//fmt.Println("resolution: ", resolution)
 	//fmt.Println("msg: ", msg)
 	question := msg.Value.(string)
-	gpt := openai.NewChatGPT(m.config.AIApiKey, m.config.AIApiUrl, m.config.AIModel)
+	gpt := openai.NewChatGPT(m.config)
 	bs64, _ := gpt.GenerateOneImage(question, resolution)
 	replayImageCardByBase64(context.Background(), bs64, &msg.MsgId,
 		&msg.SessionId, question)
