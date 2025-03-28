@@ -34,7 +34,8 @@ type MessageHandler struct {
 // CardHandler 返回卡片处理函数
 func CardHandler() func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
-		handler, err := NewMessageHandler(initialization.GetConfig())
+		config := *initialization.GetConfig()
+		handler, err := NewMessageHandler(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create message handler: %v", err)
 		}
