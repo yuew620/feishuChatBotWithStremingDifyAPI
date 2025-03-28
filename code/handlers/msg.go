@@ -148,12 +148,12 @@ func replyCardWithBackId(ctx context.Context, msgId *string, cardContent string)
 }
 
 func newSendCard(header *larkcard.MessageCardHeader, elements ...larkcard.MessageCardElement) (string, error) {
-	config := larkcard.NewMessageCardConfig().
-		WideScreenMode(false).
-		EnableForward(true).
-		UpdateMulti(true).
-		StreamingMode(true). // 启用流式更新模式
-		Build()
+	config := &larkcard.MessageCardConfig{
+		WideScreenMode: false,
+		EnableForward:  true,
+		UpdateMulti:    true,
+		StreamingMode:  true, // 启用流式更新模式
+	}
 	var aElementPool []larkcard.MessageCardElement
 	for _, element := range elements {
 		aElementPool = append(aElementPool, element)
@@ -167,12 +167,12 @@ func newSendCard(header *larkcard.MessageCardHeader, elements ...larkcard.Messag
 }
 
 func newSendCardWithOutHeader(elements ...larkcard.MessageCardElement) (string, error) {
-	config := larkcard.NewMessageCardConfig().
-		WideScreenMode(false).
-		EnableForward(true).
-		UpdateMulti(true).
-		StreamingMode(true). // 启用流式更新模式
-		Build()
+	config := &larkcard.MessageCardConfig{
+		WideScreenMode: false,
+		EnableForward:  true,
+		UpdateMulti:    true,
+		StreamingMode:  true, // 启用流式更新模式
+	}
 	var aElementPool []larkcard.MessageCardElement
 	for _, element := range elements {
 		aElementPool = append(aElementPool, element)
@@ -185,12 +185,12 @@ func newSendCardWithOutHeader(elements ...larkcard.MessageCardElement) (string, 
 }
 
 func newSimpleSendCard(elements ...larkcard.MessageCardElement) (string, error) {
-	config := larkcard.NewMessageCardConfig().
-		WideScreenMode(false).
-		EnableForward(true).
-		UpdateMulti(true).
-		StreamingMode(true). // 启用流式更新模式
-		Build()
+	config := &larkcard.MessageCardConfig{
+		WideScreenMode: false,
+		EnableForward:  true,
+		UpdateMulti:    true,
+		StreamingMode:  true, // 启用流式更新模式
+	}
 	var aElementPool []larkcard.MessageCardElement
 	for _, element := range elements {
 		aElementPool = append(aElementPool, element)
