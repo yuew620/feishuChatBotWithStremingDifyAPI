@@ -431,11 +431,11 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			if d.sentContent[content] {
 				log.Printf("Skipping duplicate content: %s", content)
 			} else {
-				log.Printf("Adding content to buffer: %s", content)
+				log.Printf("Processing content: %s", content)
 				d.sentContent[content] = true
 				
-				// 使用缓冲区累积内容并定期发送
-				if err := d.addToBufferAndSend(content, responseStream, ctx); err != nil {
+				// 根据时间间隔和是否是最后一条消息决定是否发送内容
+				if err := d.sendWithRateLimit(content, responseStream, ctx); err != nil {
 					return err
 				}
 			}
@@ -479,7 +479,7 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 }
 
 // sendWithRateLimit 根据时间间隔和是否是最后一条消息决定是否发送内容
-func (d *DifyProvider) addToBufferAndSend(content string, responseStream chan string, ctx context.Context) error {
+func (d *DifyProvider) sendWithRateLimit(content string, responseStream chan string, ctx context.Context) error {
 	d.rateLimitMu.Lock()
 	defer d.rateLimitMu.Unlock()
 	
