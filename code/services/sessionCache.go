@@ -47,6 +47,7 @@ type SessionMeta struct {
 	UpdatedAt  time.Time   `json:"updated_at"`  
 	MessageNum int         `json:"message_num"` 
 	Size       int64       `json:"size"`        // 会话大小（字节）
+	PicResolution string    `json:"pic_resolution,omitempty"` // 图片分辨率设置
 }
 
 // SessionService 会话服务
@@ -82,6 +83,8 @@ type SessionServiceCacheInterface interface {
 	GetUserSessions(userId string) []string
 	CleanExpiredSessions() int
 	GetStats() SessionStats
+	SetPicResolution(sessionId string, resolution string)
+	GetPicResolution(sessionId string) string
 }
 
 var (
@@ -392,4 +395,40 @@ func (s *SessionService) monitorMemory() {
 			s.forceCleanup()
 		}
 	}
+}
+
+// SetPicResolution 设置图片分辨率
+func (s *SessionService) SetPicResolution(sessionId string, resolution string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		sessionMeta := &SessionMeta{
+			UpdatedAt:     time.Now(),
+			PicResolution: resolution,
+		}
+		s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+		return
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta.PicResolution = resolution
+	sessionMeta.UpdatedAt = time.Now()
+	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+}
+
+// GetPicResolution 获取图片分辨率
+func (s *SessionService) GetPicResolution(sessionId string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		return "512x512" // 默认分辨率
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	if sessionMeta.PicResolution == "" {
+		return "512x512" // 默认分辨率
+	}
+	return sessionMeta.PicResolution
 }

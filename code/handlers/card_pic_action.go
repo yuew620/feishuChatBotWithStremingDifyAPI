@@ -4,6 +4,7 @@ import (
 	"context"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	"start-feishubot/services"
+	"start-feishubot/services/openai"
 )
 
 func NewPicResolutionHandler(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
@@ -45,18 +46,19 @@ func CommonProcessPicResolution(msg CardMsg,
 	cache services.SessionServiceCacheInterface) {
 	option := cardAction.Action.Option
 	//fmt.Println(larkcore.Prettify(msg))
-	cache.SetPicResolution(msg.SessionId, services.Resolution(option))
+	cache.SetPicResolution(msg.SessionId, option)
 	//send text
 	replyMsg(context.Background(), "已更新图片分辨率为"+option,
 		&msg.MsgId)
 }
 
-func (m MessageHandler) CommonProcessPicMore(msg CardMsg) {
+func (m *MessageHandler) CommonProcessPicMore(msg CardMsg) {
 	resolution := m.sessionCache.GetPicResolution(msg.SessionId)
 	//fmt.Println("resolution: ", resolution)
 	//fmt.Println("msg: ", msg)
 	question := msg.Value.(string)
-	bs64, _ := m.gpt.GenerateOneImage(question, resolution)
+	gpt := openai.NewChatGPT(m.config.OpenaiApiKey, m.config.OpenaiApiUrl, m.config.OpenaiModel)
+	bs64, _ := gpt.GenerateOneImage(question, resolution)
 	replayImageCardByBase64(context.Background(), bs64, &msg.MsgId,
 		&msg.SessionId, question)
 }
@@ -70,8 +72,7 @@ func CommonProcessPicModeChange(cardMsg CardMsg,
 		session.Clear(sessionId)
 		session.SetMode(sessionId,
 			services.ModePicCreate)
-		session.SetPicResolution(sessionId,
-			services.Resolution256)
+		session.SetPicResolution(sessionId, "256x256")
 
 		newCard, _ :=
 			newSendCard(
