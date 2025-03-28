@@ -1253,8 +1253,6 @@ func getChatIdFromMsgId(ctx context.Context, msgId *string) string {
 
 // 发送处理中卡片
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
-	content := "正在思考中，请稍等..."
-	
 	// 使用原始方法，暂时不使用新的流式更新API
 	// 这是因为新的API需要chatId，但我们无法从msgId可靠地获取chatId
 	messageId, err := sendOnProcessCardOriginal(ctx, sessionId, msgId)
