@@ -1,0 +1,389 @@
+package services
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"runtime"
+	"sort"
+	"start-feishubot/services/ai"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/patrickmn/go-cache"
+)
+
+type SessionMode string
+
+const (
+	ModePicCreate SessionMode = "pic_create"
+	ModePicVary   SessionMode = "pic_vary"
+	ModeGPT       SessionMode = "gpt"
+)
+
+// 缓存配置常量
+const (
+	DefaultExpiration = 12 * time.Hour  // 默认过期时间
+	CleanupInterval   = 1 * time.Hour   // 清理间隔
+	MaxSessionsPerUser = 10             // 每个用户最大会话数
+	MaxTotalSessions  = 10000          // 总会话数限制
+	MaxMessageLength  = 4096           // 单条消息最大长度
+	MaxMessagesPerSession = 100        // 每个会话最大消息数
+	MemoryLimit       = 1024 * 1024 * 1024 // 1GB内存限制
+)
+
+// SessionMeta 会话元数据
+type SessionMeta struct {
+	Mode       SessionMode  `json:"mode"`
+	Messages   []ai.Message `json:"messages,omitempty"`
+	UserId     string      `json:"user_id"`     
+	UpdatedAt  time.Time   `json:"updated_at"`  
+	MessageNum int         `json:"message_num"` 
+	Size       int64       `json:"size"`        // 会话大小（字节）
+}
+
+// SessionService 会话服务
+type SessionService struct {
+	cache *cache.Cache
+	mu    sync.RWMutex 
+	
+	// 统计信息
+	totalSessions   int32          // 总会话数
+	totalMemoryUsed int64          // 总内存使用
+	userSessionCount map[string]int // 用户会话计数
+	stats           *SessionStats   // 会话统计
+}
+
+// SessionStats 会话统计
+type SessionStats struct {
+	TotalSessions      int32     `json:"total_sessions"`
+	TotalMemoryUsedMB  float64   `json:"total_memory_used_mb"`
+	ActiveUsers        int       `json:"active_users"`
+	AvgSessionSize     float64   `json:"avg_session_size"`
+	LastCleanupTime    time.Time `json:"last_cleanup_time"`
+	CleanedSessions    int       `json:"cleaned_sessions"`
+}
+
+// SessionServiceCacheInterface 会话服务接口
+type SessionServiceCacheInterface interface {
+	GetMessages(sessionId string) []ai.Message
+	SetMessages(sessionId string, userId string, messages []ai.Message) error
+	GetMode(sessionId string) SessionMode
+	SetMode(sessionId string, mode SessionMode)
+	Clear(sessionId string)
+	ClearUserSessions(userId string)
+	GetUserSessions(userId string) []string
+	CleanExpiredSessions() int
+	GetStats() SessionStats
+}
+
+var (
+	sessionServices *SessionService
+	once           sync.Once
+)
+
+// GetSessionCache 获取会话缓存单例
+func GetSessionCache() SessionServiceCacheInterface {
+	once.Do(func() {
+		sessionServices = &SessionService{
+			cache:            cache.New(DefaultExpiration, CleanupInterval),
+			userSessionCount: make(map[string]int),
+			stats:           &SessionStats{},
+		}
+		
+		// 启动定期清理
+		go sessionServices.periodicCleanup()
+		
+		// 启动内存监控
+		go sessionServices.monitorMemory()
+	})
+	return sessionServices
+}
+
+// GetMode 获取会话模式
+func (s *SessionService) GetMode(sessionId string) SessionMode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		return ModeGPT
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	return sessionMeta.Mode
+}
+
+// SetMode 设置会话模式
+func (s *SessionService) SetMode(sessionId string, mode SessionMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		sessionMeta := &SessionMeta{
+			Mode:      mode,
+			UpdatedAt: time.Now(),
+		}
+		s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+		return
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta.Mode = mode
+	sessionMeta.UpdatedAt = time.Now()
+	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+}
+
+// GetMessages 获取会话消息
+func (s *SessionService) GetMessages(sessionId string) []ai.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		return nil
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	return sessionMeta.Messages
+}
+
+// SetMessages 设置会话消息
+func (s *SessionService) SetMessages(sessionId string, userId string, messages []ai.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 验证消息
+	for _, msg := range messages {
+		if err := msg.Validate(); err != nil {
+			return fmt.Errorf("invalid message: %v", err)
+		}
+		if len(msg.Content) > MaxMessageLength {
+			return fmt.Errorf("message too long: %d > %d", len(msg.Content), MaxMessageLength)
+		}
+	}
+
+	if len(messages) > MaxMessagesPerSession {
+		return fmt.Errorf("too many messages: %d > %d", len(messages), MaxMessagesPerSession)
+	}
+
+	// 检查用户会话数限制
+	if s.userSessionCount[userId] >= MaxSessionsPerUser {
+		// 清理该用户最旧的会话
+		s.cleanOldestUserSession(userId)
+	}
+
+	// 计算会话大小
+	size := s.calculateSessionSize(messages)
+
+	// 检查内存限制
+	if atomic.LoadInt64(&s.totalMemoryUsed)+size > MemoryLimit {
+		// 触发清理
+		s.forceCleanup()
+		// 再次检查
+		if atomic.LoadInt64(&s.totalMemoryUsed)+size > MemoryLimit {
+			return fmt.Errorf("memory limit exceeded")
+		}
+	}
+
+	sessionContext, exists := s.cache.Get(sessionId)
+	var sessionMeta *SessionMeta
+	if !exists {
+		// 检查总会话数限制
+		if atomic.LoadInt32(&s.totalSessions) >= MaxTotalSessions {
+			s.forceCleanup()
+			if atomic.LoadInt32(&s.totalSessions) >= MaxTotalSessions {
+				return fmt.Errorf("max sessions limit exceeded")
+			}
+		}
+		
+		sessionMeta = &SessionMeta{
+			Messages:   messages,
+			UserId:     userId,
+			UpdatedAt:  time.Now(),
+			MessageNum: len(messages),
+			Size:       size,
+		}
+		atomic.AddInt32(&s.totalSessions, 1)
+		s.userSessionCount[userId]++
+	} else {
+		sessionMeta = sessionContext.(*SessionMeta)
+		atomic.AddInt64(&s.totalMemoryUsed, -sessionMeta.Size) // 减去旧大小
+		sessionMeta.Messages = messages
+		sessionMeta.UpdatedAt = time.Now()
+		sessionMeta.MessageNum = len(messages)
+		sessionMeta.Size = size
+	}
+
+	atomic.AddInt64(&s.totalMemoryUsed, size)
+	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+	return nil
+}
+
+// Clear 清除会话
+func (s *SessionService) Clear(sessionId string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if item, exists := s.cache.Get(sessionId); exists {
+		meta := item.(*SessionMeta)
+		atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
+		atomic.AddInt32(&s.totalSessions, -1)
+		s.userSessionCount[meta.UserId]--
+		if s.userSessionCount[meta.UserId] <= 0 {
+			delete(s.userSessionCount, meta.UserId)
+		}
+	}
+	s.cache.Delete(sessionId)
+}
+
+// ClearUserSessions 清除用户所有会话
+func (s *SessionService) ClearUserSessions(userId string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.cache.Items()
+	for sessionId, item := range items {
+		if meta, ok := item.Object.(*SessionMeta); ok && meta.UserId == userId {
+			atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
+			atomic.AddInt32(&s.totalSessions, -1)
+			s.cache.Delete(sessionId)
+		}
+	}
+	delete(s.userSessionCount, userId)
+}
+
+// GetUserSessions 获取用户所有会话ID
+func (s *SessionService) GetUserSessions(userId string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var sessions []string
+	items := s.cache.Items()
+	for sessionId, item := range items {
+		if meta, ok := item.Object.(*SessionMeta); ok && meta.UserId == userId {
+			sessions = append(sessions, sessionId)
+		}
+	}
+	return sessions
+}
+
+// CleanExpiredSessions 清理过期会话
+func (s *SessionService) CleanExpiredSessions() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	expiredTime := time.Now().Add(-DefaultExpiration)
+	items := s.cache.Items()
+	for sessionId, item := range items {
+		if meta, ok := item.Object.(*SessionMeta); ok {
+			if meta.UpdatedAt.Before(expiredTime) {
+				atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
+				atomic.AddInt32(&s.totalSessions, -1)
+				s.userSessionCount[meta.UserId]--
+				if s.userSessionCount[meta.UserId] <= 0 {
+					delete(s.userSessionCount, meta.UserId)
+				}
+				s.cache.Delete(sessionId)
+				count++
+			}
+		}
+	}
+	
+	s.stats.LastCleanupTime = time.Now()
+	s.stats.CleanedSessions += count
+	return count
+}
+
+// GetStats 获取统计信息
+func (s *SessionService) GetStats() SessionStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	s.stats.TotalSessions = atomic.LoadInt32(&s.totalSessions)
+	s.stats.TotalMemoryUsedMB = float64(atomic.LoadInt64(&s.totalMemoryUsed)) / 1024 / 1024
+	s.stats.ActiveUsers = len(s.userSessionCount)
+	if s.stats.TotalSessions > 0 {
+		s.stats.AvgSessionSize = float64(s.totalMemoryUsed) / float64(s.totalSessions)
+	}
+	return *s.stats
+}
+
+// 内部方法
+
+func (s *SessionService) calculateSessionSize(messages []ai.Message) int64 {
+	bytes, _ := json.Marshal(messages)
+	return int64(len(bytes))
+}
+
+func (s *SessionService) cleanOldestUserSession(userId string) {
+	var oldestSession string
+	var oldestTime time.Time
+	items := s.cache.Items()
+	for sessionId, item := range items {
+		if meta, ok := item.Object.(*SessionMeta); ok && meta.UserId == userId {
+			if oldestSession == "" || meta.UpdatedAt.Before(oldestTime) {
+				oldestSession = sessionId
+				oldestTime = meta.UpdatedAt
+			}
+		}
+	}
+	if oldestSession != "" {
+		s.Clear(oldestSession)
+	}
+}
+
+func (s *SessionService) forceCleanup() {
+	// 首先清理过期会话
+	s.CleanExpiredSessions()
+	
+	// 如果还需要清理，按最后访问时间清理
+	if atomic.LoadInt64(&s.totalMemoryUsed) > MemoryLimit*0.9 {
+		items := s.cache.Items()
+		sessions := make([]*struct {
+			id   string
+			meta *SessionMeta
+		}, 0, len(items))
+		
+		for id, item := range items {
+			if meta, ok := item.Object.(*SessionMeta); ok {
+				sessions = append(sessions, &struct {
+					id   string
+					meta *SessionMeta
+				}{id, meta})
+			}
+		}
+		
+		// 按最后访问时间排序
+		sort.Slice(sessions, func(i, j int) bool {
+			return sessions[i].meta.UpdatedAt.Before(sessions[j].meta.UpdatedAt)
+		})
+		
+		// 清理最旧的20%会话
+		cleanCount := len(sessions) / 5
+		for i := 0; i < cleanCount; i++ {
+			s.Clear(sessions[i].id)
+		}
+	}
+}
+
+func (s *SessionService) periodicCleanup() {
+	ticker := time.NewTicker(CleanupInterval)
+	for range ticker.C {
+		s.CleanExpiredSessions()
+	}
+}
+
+func (s *SessionService) monitorMemory() {
+	ticker := time.NewTicker(time.Minute)
+	for range ticker.C {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		
+		// 如果总内存使用超过限制的80%，触发清理
+		if m.Alloc > uint64(MemoryLimit*0.8) {
+			log.Printf("Memory usage high (%.2f MB), triggering cleanup", float64(m.Alloc)/1024/1024)
+			s.forceCleanup()
+		}
+	}
+}
