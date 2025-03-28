@@ -37,22 +37,23 @@ func main() {
 
 	// 初始化日志
 	var logger *lumberjack.Logger
-	if globalConfig.EnableLog {
+	config := initialization.GetConfig()
+	if config.EnableLog {
 		logger = enableLog()
 		defer utils.CloseLogger(logger)
 	}
 
 	// 初始化飞书客户端
-	initialization.LoadLarkClient(*globalConfig)
+	initialization.LoadLarkClient(*initialization.GetConfig())
 	
 	// 初始化handlers
-	if err := handlers.InitHandlers(*globalConfig); err != nil {
+	if err := handlers.InitHandlers(*initialization.GetConfig()); err != nil {
 		log.Fatalf("failed to initialize handlers: %v", err)
 	}
 
 	// 创建事件处理器
 	eventHandler := dispatcher.NewEventDispatcher(
-		globalConfig.FeishuAppVerificationToken, globalConfig.FeishuAppEncryptKey).
+		config.FeishuAppVerificationToken, config.FeishuAppEncryptKey).
 		OnP2MessageReceiveV1(handlers.Handler).
 		OnP2MessageReadV1(func(ctx context.Context, event *larkim.P2MessageReadV1) error {
 			return handlers.ReadHandler(ctx, event)
@@ -60,7 +61,7 @@ func main() {
 
 	// 创建卡片处理器
 	cardHandler := larkcard.NewCardActionHandler(
-		globalConfig.FeishuAppVerificationToken, globalConfig.FeishuAppEncryptKey,
+		config.FeishuAppVerificationToken, config.FeishuAppEncryptKey,
 		handlers.CardHandler())
 
 	// 设置路由
@@ -78,7 +79,7 @@ func main() {
 
 	// 创建HTTP服务器
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", globalConfig.HttpPort),
+		Addr:    fmt.Sprintf(":%d", config.HttpPort),
 		Handler: r,
 	}
 
@@ -109,8 +110,8 @@ func main() {
 
 	// 启动服务器
 	var err error
-	if globalConfig.UseHttps {
-		err = srv.ListenAndServeTLS(globalConfig.GetCertFile(), globalConfig.GetKeyFile())
+	if config.UseHttps {
+		err = srv.ListenAndServeTLS(config.GetCertFile(), config.GetKeyFile())
 	} else {
 		err = srv.ListenAndServe()
 	}
