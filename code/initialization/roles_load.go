@@ -19,7 +19,7 @@ var RoleList *[]Role
 
 // InitRoleList 加载Prompt
 func InitRoleList() *[]Role {
-	data, err := ioutil.ReadFile("role_list.yaml")
+	data, err := ioutil.ReadFile("/app/role_list.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}

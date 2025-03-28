@@ -14,6 +14,7 @@ FROM alpine:latest
 
 WORKDIR /app
 COPY --from=builder /build/feishu-bot .
+COPY code/role_list.yaml .
 
 # 安装必要的运行时依赖
 RUN apk --no-cache add ca-certificates tzdata curl
