@@ -168,7 +168,7 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 		return "", fmt.Errorf("failed to get tenant_access_token: %w", err)
 	}
 	
-	// 构建卡片JSON 2.0结构
+	// 构建卡片JSON 2.0结构，严格按照飞书官方文档
 	cardJSON := map[string]interface{}{
 		"schema": "2.0",
 		"header": map[string]interface{}{
@@ -203,7 +203,7 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 				{
 					"tag": "markdown",
 					"content": content,
-					"element_id": "content_block",
+					"element_id": "content_block", // 确保设置element_id，用于后续流式更新
 				},
 			},
 		},
@@ -228,6 +228,7 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 
 	// 构建请求URL
 	url := "https://open.feishu.cn/open-apis/cardkit/v1/cards/"
+	log.Printf("Creating card entity with URL: %s", url)
 	
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
@@ -269,6 +270,7 @@ func createCardEntity(ctx context.Context, content string) (string, error) {
 		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
 	}
 	
+	log.Printf("Successfully created card entity with ID: %s", result.Data.CardID)
 	return result.Data.CardID, nil
 }
 
