@@ -100,6 +100,8 @@ func (d *DifyClient) cleanupConversations() {
 func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, responseStream chan string) error {
 	defer close(responseStream) // Ensure the channel is closed when the function exits
 
+	log.Printf("Starting StreamChat for user %s", messages[len(messages)-1].Metadata["user_id"])
+
 	// 构建请求体
 	lastMsg := messages[len(messages)-1]
 	historicalMessages := messages[:len(messages)-1]
@@ -146,6 +148,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
+		log.Printf("Error marshaling request: %v", err)
 		return fmt.Errorf("error marshaling request: %v", err)
 	}
 
@@ -167,6 +170,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		apiUrl, 
 		strings.NewReader(string(jsonBody)))
 	if err != nil {
+		log.Printf("Error creating request: %v", err)
 		return fmt.Errorf("error creating request: %v", err)
 	}
 
@@ -178,6 +182,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("Error sending request: %v", err)
 		return fmt.Errorf("error sending request: %v", err)
 	}
 	defer resp.Body.Close()
@@ -190,23 +195,32 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	// 如果状态码不是200，读取并打印错误响应
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 		return fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	// 处理流式响应
 	reader := bufio.NewReader(resp.Body)
+	idleTimer := time.NewTimer(5 * time.Second)
+	defer idleTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("Context cancelled, stopping stream processing")
 			return ctx.Err()
+		case <-idleTimer.C:
+			log.Printf("Stream has been idle for 5 seconds")
+			return fmt.Errorf("stream idle timeout")
 		default:
+			idleTimer.Reset(5 * time.Second)
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err == io.EOF {
 					log.Printf("Reached end of stream")
 					return nil
 				}
+				log.Printf("Error reading stream: %v", err)
 				return fmt.Errorf("error reading stream: %v", err)
 			}
 

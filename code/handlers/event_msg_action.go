@@ -89,6 +89,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	cardInfo, chatResponseStream, err := sendOnProcess(a, aiMessages)
 	if err != nil {
 		log.Printf("Failed to send processing card and start chat: %v", err)
+		_ = sendMsg(*a.ctx, fmt.Sprintf("处理消息时出错: %v", err), a.info.chatId)
 		return false
 	}
 	cardCreateEnd := time.Now()
@@ -119,9 +120,15 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			if !ok {
 				// 流结束，保存会话并更新最终卡片
 				log.Printf("[Timing] Total streaming time: %v ms", time.Since(streamingStartTime).Milliseconds())
+				if answer == "" {
+					log.Printf("Warning: Received empty response from Dify")
+					_ = updateFinalCard(ctx, "抱歉，未能获取到有效回复", cardInfo)
+					return false
+				}
 				return m.handleCompletion(ctx, a, cardInfo, answer, aiMessages)
 			}
 			noContentTimeout.Stop()
+			noContentTimeout.Reset(10 * time.Second)
 			
 			m.mu.Lock()
 			// 处理所有收到的内容，不再检查是否包含
@@ -211,11 +218,15 @@ func printErrorMessage(a *ActionInfo, msg []ai.Message, err error) {
 }
 
 func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
+	log.Printf("Starting sendOnProcess for session %s", *a.info.sessionId)
+	
 	// 创建响应通道
 	responseStream := make(chan string, 10)
 	
 	// 创建Dify消息处理函数
 	difyHandler := func(ctx context.Context) error {
+		log.Printf("Starting Dify handler for session %s", *a.info.sessionId)
+		
 		// 预处理消息，准备发送到Dify
 		difyMessages := make([]dify.Messages, len(aiMessages))
 		for i, msg := range aiMessages {
@@ -228,23 +239,134 @@ func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan stri
 		
 		// 发送请求到Dify服务
 		difyClient := initialization.GetDifyClient()
+		log.Printf("Sending StreamChat request to Dify for session %s", *a.info.sessionId)
 		err := difyClient.StreamChat(ctx, difyMessages, responseStream)
 		if err != nil {
-			log.Printf("Error in Dify StreamChat: %v", err)
+			log.Printf("Error in Dify StreamChat for session %s: %v", *a.info.sessionId, err)
 			return fmt.Errorf("failed to send message to Dify: %w", err)
 		}
 		
-		log.Printf("Dify StreamChat completed successfully")
+		log.Printf("Dify StreamChat completed successfully for session %s", *a.info.sessionId)
 		return nil
 	}
 	
 	// 使用并行处理函数
+	log.Printf("Calling sendOnProcessCardAndDify for session %s", *a.info.sessionId)
 	cardInfo, err := sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
 	if err != nil {
-		log.Printf("Error in sendOnProcessCardAndDify: %v", err)
+		log.Printf("Error in sendOnProcessCardAndDify for session %s: %v", *a.info.sessionId, err)
 		return nil, nil, fmt.Errorf("failed to send processing card: %w", err)
 	}
 	
-	log.Printf("Processing card sent successfully, card ID: %s", cardInfo.CardId)
-	return cardInfo, responseStream, nil
+	log.Printf("Processing card sent successfully for session %s, card ID: %s", *a.info.sessionId, cardInfo.CardId)
+
+	// 创建一个新的通道来处理和记录从Dify接收到的消息
+	processedStream := make(chan string, 10)
+	go func() {
+		defer close(processedStream)
+		for msg := range responseStream {
+			log.Printf("Received message from Dify for session %s: %s", *a.info.sessionId, msg)
+			processedStream <- msg
+		}
+		log.Printf("Dify response stream closed for session %s", *a.info.sessionId)
+	}()
+
+	log.Printf("sendOnProcess completed for session %s", *a.info.sessionId)
+	return cardInfo, processedStream, nil
+}
+
+// Add this new function to log the details of sendOnProcessCardAndDify
+func sendOnProcessCardAndDify(ctx context.Context, sessionId, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
+	log.Printf("Starting sendOnProcessCardAndDify for session %s", *sessionId)
+	
+	// Create processing card
+	cardInfo, err := createProcessingCard(ctx, sessionId, msgId)
+	if err != nil {
+		log.Printf("Failed to create processing card for session %s: %v", *sessionId, err)
+		return nil, fmt.Errorf("failed to create processing card: %w", err)
+	}
+	log.Printf("Processing card created successfully for session %s", *sessionId)
+
+	// Start Dify chat in a separate goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		log.Printf("Starting Dify handler goroutine for session %s", *sessionId)
+		if err := difyHandler(ctx); err != nil {
+			log.Printf("Dify handler error for session %s: %v", *sessionId, err)
+			errChan <- err
+		}
+		close(errChan)
+		log.Printf("Dify handler goroutine completed for session %s", *sessionId)
+	}()
+
+	// Wait for potential immediate errors
+	select {
+	case err := <-errChan:
+		if err != nil {
+			log.Printf("Immediate error from Dify handler for session %s: %v", *sessionId, err)
+			return nil, fmt.Errorf("dify handler error: %w", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		// No immediate error, continue
+	}
+
+	log.Printf("sendOnProcessCardAndDify completed successfully for session %s", *sessionId)
+	return cardInfo, nil
+}
+
+// Add detailed logging to createProcessingCard function
+func createProcessingCard(ctx context.Context, sessionId, msgId *string) (*CardInfo, error) {
+	log.Printf("Starting createProcessingCard for session %s, message %s", *sessionId, *msgId)
+
+	// Create the processing card
+	cardInfo, err := createCard(ctx, sessionId, msgId, "正在处理中...")
+	if err != nil {
+		log.Printf("Failed to create card for session %s, message %s: %v", *sessionId, *msgId, err)
+		return nil, fmt.Errorf("failed to create card: %w", err)
+	}
+
+	log.Printf("Card created successfully for session %s, message %s, card ID: %s", *sessionId, *msgId, cardInfo.CardId)
+
+	// Store the card info in the session cache
+	err = storeCardInfo(ctx, sessionId, msgId, cardInfo)
+	if err != nil {
+		log.Printf("Failed to store card info for session %s, message %s: %v", *sessionId, *msgId, err)
+		return nil, fmt.Errorf("failed to store card info: %w", err)
+	}
+
+	log.Printf("Card info stored successfully for session %s, message %s", *sessionId, *msgId)
+
+	return cardInfo, nil
+}
+
+// Add detailed logging to createCard function
+func createCard(ctx context.Context, sessionId, msgId *string, content string) (*CardInfo, error) {
+	log.Printf("Starting createCard for session %s, message %s", *sessionId, *msgId)
+
+	// Create the card (implementation details may vary)
+	cardInfo, err := cardCreator.CreateCard(ctx, content)
+	if err != nil {
+		log.Printf("Failed to create card for session %s, message %s: %v", *sessionId, *msgId, err)
+		return nil, fmt.Errorf("failed to create card: %w", err)
+	}
+
+	log.Printf("Card created successfully for session %s, message %s, card ID: %s", *sessionId, *msgId, cardInfo.CardId)
+
+	return cardInfo, nil
+}
+
+// Add detailed logging to storeCardInfo function
+func storeCardInfo(ctx context.Context, sessionId, msgId *string, cardInfo *CardInfo) error {
+	log.Printf("Starting storeCardInfo for session %s, message %s, card ID: %s", *sessionId, *msgId, cardInfo.CardId)
+
+	// Store the card info in the session cache (implementation details may vary)
+	err := sessionCache.StoreCardInfo(*sessionId, *msgId, cardInfo)
+	if err != nil {
+		log.Printf("Failed to store card info for session %s, message %s: %v", *sessionId, *msgId, err)
+		return fmt.Errorf("failed to store card info: %w", err)
+	}
+
+	log.Printf("Card info stored successfully for session %s, message %s", *sessionId, *msgId)
+
+	return nil
 }
