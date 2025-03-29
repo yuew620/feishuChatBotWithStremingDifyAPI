@@ -7,13 +7,14 @@ import (
 	"start-feishubot/services/accesscontrol"
 	"start-feishubot/services/ai"
 	"start-feishubot/services/cardservice"
+	"start-feishubot/services/cardpool"
 )
 
 var handler MessageHandlerInterface
 
 func InitHandlers(config initialization.Config) error {
 	// 初始化AI提供商
-	provider, err := ai.InitAIProvider(config)
+	provider, err := initialization.InitAIProvider()
 	if err != nil {
 		return err
 	}
@@ -27,9 +28,9 @@ func InitHandlers(config initialization.Config) error {
 	}
 
 	// 初始化卡片池
-	cardservice.InitCardPool(cardservice.CreateCardFn(func(ctx context.Context, content string) (string, error) {
-		return CreateCardEntity(ctx, content)
-	}))
+	cardservice.InitCardPool(func(ctx context.Context) (string, error) {
+		return CreateCardEntity(ctx, "")
+	})
 
 	// 创建消息处理器
 	h, err := NewMessageHandler(config)

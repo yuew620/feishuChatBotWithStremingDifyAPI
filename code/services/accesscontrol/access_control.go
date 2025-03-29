@@ -6,6 +6,14 @@ import (
 	"sync"
 )
 
+// InitAccessControl initializes the access control system
+func InitAccessControl(config initialization.Config) error {
+	// Initialize the access control system with the provided configuration
+	// For now, we'll just set the current date flag
+	currentDateFlag = utils.GetCurrentDateAsString()
+	return nil
+}
+
 var accessCountMap = sync.Map{}
 var currentDateFlag = ""
 
