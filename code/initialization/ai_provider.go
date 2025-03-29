@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"start-feishubot/services/ai"
 	"start-feishubot/services/ai/dify"
-	"start-feishubot/services/dify"
+	difyservice "start-feishubot/services/dify"
 	"sync"
 	"time"
 )
@@ -41,6 +41,15 @@ func (w *AIConfigWrapper) GetTimeout() time.Duration {
 
 func (w *AIConfigWrapper) GetMaxRetries() int {
 	return w.config.AIMaxRetries
+}
+
+// 实现dify.Config接口
+func (w *AIConfigWrapper) GetDifyApiUrl() string {
+	return w.config.AIApiUrl
+}
+
+func (w *AIConfigWrapper) GetDifyApiKey() string {
+	return w.config.AIApiKey
 }
 
 // InitAIProvider 初始化AI提供商
@@ -108,14 +117,14 @@ func registerFactories(manager *ai.FactoryManager) error {
 }
 
 // 全局Dify客户端实例
-var difyClient *dify.DifyClient
+var difyClient *difyservice.DifyClient
 var difyClientOnce sync.Once
 
 // GetDifyClient 获取或创建Dify客户端实例
-func GetDifyClient() *dify.DifyClient {
+func GetDifyClient() *difyservice.DifyClient {
 	difyClientOnce.Do(func() {
 		config := GetConfig()
-		difyClient = dify.NewDifyClient(config)
+		difyClient = difyservice.NewDifyClient(NewAIConfigWrapper(config))
 	})
 	return difyClient
 }

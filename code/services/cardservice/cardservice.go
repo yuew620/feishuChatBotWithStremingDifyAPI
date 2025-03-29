@@ -3,7 +3,7 @@ package cardservice
 import (
 	"context"
 	"log"
-	"start-feishubot/handlers"
+	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/cardpool"
 	"sync"
 )
@@ -14,19 +14,8 @@ var (
 )
 
 // InitCardPool 初始化卡片池
-func InitCardPool() {
+func InitCardPool(createCardFn cardcreator.CreateCardFunc) {
 	poolOnce.Do(func() {
-		// 创建卡片的函数
-		createCardFn := func(ctx context.Context) (string, error) {
-			content := "正在思考中，请稍等..."
-			cardID, err := handlers.CreateCardEntity(ctx, content)
-			if err != nil {
-				log.Printf("Failed to create card entity: %v", err)
-				return "", err
-			}
-			return cardID, nil
-		}
-
 		// 创建卡片池
 		pool = cardpool.NewCardPool(createCardFn)
 		log.Printf("Card pool initialized")

@@ -49,10 +49,7 @@ func main() {
 	initialization.LoadLarkClient(*initialization.GetConfig())
 	
 	// 初始化卡片池
-	if err := initCardPool(context.Background()); err != nil {
-		log.Printf("Warning: Failed to initialize card pool: %v", err)
-		// 继续执行，不致命错误
-	}
+	initCardPool(context.Background())
 	
 	// 初始化handlers
 	if err := handlers.InitHandlers(*initialization.GetConfig()); err != nil {
@@ -158,9 +155,10 @@ func main() {
 	}
 }
 
-func initCardPool(ctx context.Context) error {
-	// 使用createCardEntity函数初始化卡片池
-	return services.InitCardPool(ctx, handlers.CreateCardEntity, "正在思考中，请稍等...")
+func initCardPool(ctx context.Context) {
+	services.InitCardPool(func(ctx context.Context, content string) (string, error) {
+		return handlers.CreateCardEntity(ctx, content)
+	})
 }
 
 func enableLog() *lumberjack.Logger {

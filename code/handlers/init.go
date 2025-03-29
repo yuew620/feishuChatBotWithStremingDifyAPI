@@ -6,6 +6,7 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/accesscontrol"
 	"start-feishubot/services/ai"
+	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/cardservice"
 )
 
@@ -24,7 +25,9 @@ func InitHandlers(config initialization.Config) error {
 	}
 
 	// 初始化卡片池
-	cardservice.InitCardPool()
+	cardservice.InitCardPool(func(ctx context.Context, content string) (string, error) {
+		return CreateCardEntity(ctx, content)
+	})
 
 	// 创建消息处理器
 	h, err := NewMessageHandler(config)
