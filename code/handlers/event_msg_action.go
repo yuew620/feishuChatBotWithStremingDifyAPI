@@ -53,16 +53,24 @@ type CardInfo struct {
 }
 
 // sendOnProcessCardAndDify sends a processing card and starts the Dify chat
-func sendOnProcessCardAndDify(ctx context.Context, sessionId, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
+func (m *MessageHandler) sendOnProcessCardAndDify(ctx context.Context, sessionId, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
 	log.Printf("Creating processing card for session %s", *sessionId)
 	
-	// Create a processing card
-	cardInfo := &CardInfo{CardId: "processing_card_" + *sessionId}
+	// Create a processing card using cardCreator
+	card, err := m.cardCreator.CreateCard(ctx, "正在处理中...")
+	if err != nil {
+		log.Printf("Error creating processing card: %v", err)
+		return nil, fmt.Errorf("failed to create processing card: %w", err)
+	}
+	
+	cardInfo := &CardInfo{CardId: card.CardId}
 	
 	// Start the Dify chat in a goroutine
 	go func() {
 		if err := difyHandler(ctx); err != nil {
 			log.Printf("Error in Dify handler: %v", err)
+			// Here you might want to update the card with an error message
+			_ = m.cardCreator.UpdateCard(ctx, card.CardId, "处理过程中出错: "+err.Error())
 		}
 	}()
 	
@@ -70,19 +78,12 @@ func sendOnProcessCardAndDify(ctx context.Context, sessionId, msgId *string, dif
 }
 
 // updateTextCard updates the card with the given content
-func updateTextCard(ctx context.Context, content string, cardInfo *CardInfo) error {
+func (m *MessageHandler) updateTextCard(ctx context.Context, content string, cardInfo *CardInfo) error {
 	log.Printf("Starting updateTextCard for card ID: %s", cardInfo.CardId)
 
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
-		// Simulate card update
-		log.Printf("Updating card %s with content: %s", cardInfo.CardId, content)
-		
-		// In a real implementation, this would call the card service
-		// err := cardService.UpdateCard(ctx, cardInfo.CardId, content)
-		// For now, we'll just simulate success
-		err := error(nil)
-		
+		err := m.cardCreator.UpdateCard(ctx, cardInfo.CardId, content)
 		if err == nil {
 			log.Printf("Card update successful for card ID: %s", cardInfo.CardId)
 			return nil
@@ -105,12 +106,12 @@ func updateTextCard(ctx context.Context, content string, cardInfo *CardInfo) err
 }
 
 // updateFinalCard updates the card with the final content
-func updateFinalCard(ctx context.Context, content string, cardInfo *CardInfo) error {
+func (m *MessageHandler) updateFinalCard(ctx context.Context, content string, cardInfo *CardInfo) error {
 	log.Printf("Updating final card for card ID: %s", cardInfo.CardId)
-	return updateTextCard(ctx, content, cardInfo)
+	return m.updateTextCard(ctx, content, cardInfo)
 }
 
-func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
+func (m *MessageHandler) sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
 	log.Printf("Starting sendOnProcess for session %s", *a.info.sessionId)
 	
 	// 创建响应通道
@@ -165,7 +166,7 @@ func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan stri
 	
 	// 使用并行处理函数
 	log.Printf("Calling sendOnProcessCardAndDify for session %s", *a.info.sessionId)
-	cardInfo, err := sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
+	cardInfo, err := m.sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
 	if err != nil {
 		log.Printf("Error in sendOnProcessCardAndDify for session %s: %v", *a.info.sessionId, err)
 		close(responseStream)
