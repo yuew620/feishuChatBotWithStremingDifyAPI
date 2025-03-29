@@ -156,9 +156,9 @@ func main() {
 }
 
 func initCardPool(ctx context.Context) {
-	services.InitCardPool(func(ctx context.Context, content string) (string, error) {
+	services.InitCardPool(ctx, func(ctx context.Context, content string) (string, error) {
 		return handlers.CreateCardEntity(ctx, content)
-	})
+	}, "")
 }
 
 func enableLog() *lumberjack.Logger {
