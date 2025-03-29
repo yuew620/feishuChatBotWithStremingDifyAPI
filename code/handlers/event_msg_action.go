@@ -69,58 +69,24 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
-	// 发送处理中卡片
+	// 发送处理中卡片并开始流式聊天
 	cardCreateStart := time.Now()
-	log.Printf("[Timing] 2. 开始创建卡片: %v", cardCreateStart.Format("2006-01-02 15:04:05.000"))
-	cardInfo, err := sendOnProcess(a)
+	log.Printf("[Timing] 2. 开始创建卡片和发送AI请求: %v", cardCreateStart.Format("2006-01-02 15:04:05.000"))
+	cardInfo, chatResponseStream, err := sendOnProcess(a)
 	if err != nil {
-		log.Printf("Failed to send processing card: %v", err)
+		log.Printf("Failed to send processing card and start chat: %v", err)
 		return false
 	}
 	cardCreateEnd := time.Now()
-	log.Printf("[Timing] 3. 卡片创建完成: %v", cardCreateEnd.Format("2006-01-02 15:04:05.000"))
-	log.Printf("[Timing] 卡片创建总耗时: %v ms", time.Since(cardCreateStart).Milliseconds())
+	log.Printf("[Timing] 3. 卡片创建和AI请求发送完成: %v", cardCreateEnd.Format("2006-01-02 15:04:05.000"))
+	log.Printf("[Timing] 卡片创建和AI请求发送总耗时: %v ms", time.Since(cardCreateStart).Milliseconds())
 
-	// 从会话缓存中获取历史消息
-	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
-	
-	// 添加用户新消息，并设置元数据
-	userMessage := ai.Message{
-		Role:    "user",
-		Content: a.info.qParsed,
-		Metadata: map[string]string{
-			"session_id": *a.info.sessionId,
-			"user_id":    a.info.userId,
-		},
-	}
-	aiMessages = append(aiMessages, userMessage)
-	
-	// 创建响应通道
-	chatResponseStream := make(chan string, 10)
 	errChan := make(chan error, 1)
 	answer := ""
 	
 	// 设置无内容超时
 	noContentTimeout := time.NewTimer(10 * time.Second)
 	defer noContentTimeout.Stop()
-	
-	// 启动goroutine处理AI请求
-	go func() {
-		defer func() {
-			close(chatResponseStream)
-		}()
-		
-		aiRequestStart := time.Now()
-		log.Printf("Sending request to AI provider with %d messages", len(aiMessages))
-		if err := m.provider.StreamChat(ctx, aiMessages, chatResponseStream); err != nil {
-			log.Printf("AI provider error: %v", err)
-			log.Printf("[Timing] AI request failed after: %v ms", time.Since(aiRequestStart).Milliseconds())
-			select {
-			case errChan <- err:
-			default:
-			}
-		}
-	}()
 
 	// 主循环处理响应
 	for {
@@ -215,7 +181,7 @@ func printErrorMessage(a *ActionInfo, msg []ai.Message, err error) {
 	log.Printf("Failed request: UserId: %s , Request: %s , Err: %s", a.info.userId, msg, err)
 }
 
-func sendOnProcess(a *ActionInfo) (*CardInfo, error) {
+func sendOnProcess(a *ActionInfo) (*CardInfo, chan string, error) {
 	// 从会话缓存中获取历史消息
 	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
 	
@@ -230,6 +196,9 @@ func sendOnProcess(a *ActionInfo) (*CardInfo, error) {
 	}
 	aiMessages = append(aiMessages, userMessage)
 	
+	// 创建响应通道
+	responseStream := make(chan string, 10)
+	
 	// 创建Dify消息处理函数
 	difyHandler := func(ctx context.Context) error {
 		// 预处理消息，准备发送到Dify
@@ -242,17 +211,9 @@ func sendOnProcess(a *ActionInfo) (*CardInfo, error) {
 			}
 		}
 		
-		// 创建一个临时的响应通道，因为我们只是预热Dify服务
-		tempResponseStream := make(chan string)
-		go func() {
-			// 丢弃所有响应
-			for range tempResponseStream {
-			}
-		}()
-		
 		// 发送请求到Dify服务
 		difyClient := initialization.GetDifyClient()
-		if err := difyClient.StreamChat(ctx, difyMessages, tempResponseStream); err != nil {
+		if err := difyClient.StreamChat(ctx, difyMessages, responseStream); err != nil {
 			return fmt.Errorf("failed to send message to Dify: %w", err)
 		}
 		
@@ -262,7 +223,7 @@ func sendOnProcess(a *ActionInfo) (*CardInfo, error) {
 	// 使用并行处理函数
 	cardInfo, err := sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send processing card: %w", err)
+		return nil, nil, fmt.Errorf("failed to send processing card: %w", err)
 	}
-	return cardInfo, nil
+	return cardInfo, responseStream, nil
 }
