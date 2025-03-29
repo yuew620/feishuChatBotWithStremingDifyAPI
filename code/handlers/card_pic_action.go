@@ -2,90 +2,93 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
-	"start-feishubot/initialization"
 	"start-feishubot/services"
-	"start-feishubot/services/openai"
 )
 
+// NewPicResolutionHandler handles picture resolution changes
 func NewPicResolutionHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicResolutionKind {
-			CommonProcessPicResolution(ctx, cardMsg, cardAction, m.sessionCache)
-			return nil, nil
+			newCard, err := CommonProcessPicResolution(ctx, cardMsg, m.sessionCache)
+			if err != nil {
+				return nil, err
+			}
+			return newCard, nil
 		}
 		return nil, ErrNextHandler
 	}
 }
 
+// NewPicModeChangeHandler handles picture mode changes
 func NewPicModeChangeHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicModeChangeKind {
-			newCard, err, done := CommonProcessPicModeChange(ctx, cardMsg, m.sessionCache)
-			if done {
-				return newCard, err
+			newCard, err := CommonProcessPicModeChange(ctx, cardMsg, m.sessionCache)
+			if err != nil {
+				return nil, err
 			}
-			return nil, nil
+			return newCard, nil
 		}
 		return nil, ErrNextHandler
 	}
 }
 
+// NewPicTextMoreHandler handles requests for more picture text
 func NewPicTextMoreHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicTextMoreKind {
-			go func() {
-				m.CommonProcessPicMore(ctx, cardMsg)
-			}()
-			return nil, nil
+			// Get the resolution from session cache
+			resolution := m.sessionCache.GetPicResolution(cardMsg.SessionId)
+			
+			// Create a new card with the resolution
+			newCard, _ := newSendCard(
+				withHeader("🎨 图片生成", larkcard.TemplateBlue),
+				withMainMd(fmt.Sprintf("正在生成图片，分辨率: %s", resolution)),
+				withNote("请稍等片刻，图片生成中..."),
+			)
+			return newCard, nil
 		}
 		return nil, ErrNextHandler
 	}
 }
 
-func CommonProcessPicResolution(ctx context.Context, msg CardMsg,
-	cardAction *larkcard.CardAction,
-	cache services.SessionServiceCacheInterface) {
-	option := cardAction.Action.Option
-	cache.SetPicResolution(msg.SessionId, option)
-	replyMsg(ctx, "已更新图片分辨率为"+option,
-		&msg.MsgId)
+// CommonProcessPicResolution processes picture resolution changes
+func CommonProcessPicResolution(ctx context.Context, msg CardMsg, session services.SessionServiceCacheInterface) (interface{}, error) {
+	// Set the resolution in the session cache
+	resolution, ok := msg.Value.(string)
+	if !ok {
+		resolution = "512x512" // Default resolution
+	}
+	
+	session.SetPicResolution(msg.SessionId, resolution)
+	
+	// Create a new card with the resolution
+	newCard, _ := newSendCard(
+		withHeader("🎨 分辨率已设置", larkcard.TemplateGreen),
+		withMainMd(fmt.Sprintf("图片分辨率已设置为: %s", resolution)),
+		withNote("您可以继续发送文本来生成图片"),
+	)
+	return newCard, nil
 }
 
-func (m *MessageHandler) CommonProcessPicMore(ctx context.Context, msg CardMsg) {
-	resolution := m.sessionCache.GetPicResolution(msg.SessionId)
-	question := msg.Value.(string)
-	config := initialization.GetConfig()
-	gpt := openai.NewChatGPT(config)
-	bs64, _ := gpt.GenerateOneImage(question, resolution)
-	replayImageCardByBase64(ctx, bs64, &msg.MsgId,
-		&msg.SessionId, question)
-}
-
-func CommonProcessPicModeChange(ctx context.Context, cardMsg CardMsg,
-	session services.SessionServiceCacheInterface) (
-	interface{}, error, bool) {
-	if cardMsg.Value == "1" {
-		sessionId := cardMsg.SessionId
-		session.Clear(sessionId)
-		session.SetMode(sessionId,
-			services.ModePicCreate)
-		session.SetPicResolution(sessionId, "256x256")
-
-		newCard, _ :=
-			newSendCard(
-				withHeader("🖼️ 已进入图片创作模式", larkcard.TemplateBlue),
-				withPicResolutionBtn(&sessionId),
-				withNote("提醒：回复文本或图片，让AI生成相关的图片。"))
-		return newCard, nil, true
+// CommonProcessPicModeChange processes picture mode changes
+func CommonProcessPicModeChange(ctx context.Context, msg CardMsg, session services.SessionServiceCacheInterface) (interface{}, error) {
+	// Set the mode in the session cache
+	mode, ok := msg.Value.(string)
+	if !ok {
+		mode = string(ModePicCreate) // Default mode
 	}
-	if cardMsg.Value == "0" {
-		newCard, _ := newSendCard(
-			withHeader("️🎒 机器人提醒", larkcard.TemplateGreen),
-			withMainMd("依旧保留此话题的上下文信息"),
-			withNote("我们可以继续探讨这个话题,期待和您聊天。如果您有其他问题或者想要讨论的话题，请告诉我哦"),
-		)
-		return newCard, nil, true
-	}
-	return nil, nil, false
+	
+	session.SetMode(msg.SessionId, SessionMode(mode))
+	
+	// Create a new card with the mode
+	newCard, _ := newSendCard(
+		withHeader("🎨 模式已切换", larkcard.TemplateGreen),
+		withMainMd(fmt.Sprintf("图片模式已切换为: %s", mode)),
+		withNote("您可以继续发送文本来生成图片"),
+	)
+	return newCard, nil
 }

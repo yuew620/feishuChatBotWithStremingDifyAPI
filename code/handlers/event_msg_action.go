@@ -233,7 +233,10 @@ func (m *MessageHandler) getOrCreateCard(ctx *context.Context) (*CardInfo, error
 		cardID, err := cardPool.GetCard(*ctx)
 		if err == nil {
 			log.Printf("Got card from pool: %s", cardID)
-			return &CardInfo{CardEntityId: cardID}, nil
+			return &CardInfo{
+				CardEntityId: cardID,
+				ElementId:    "content_block",
+			}, nil
 		}
 		log.Printf("Failed to get card from pool: %v, creating new card", err)
 	}
@@ -244,5 +247,23 @@ func (m *MessageHandler) getOrCreateCard(ctx *context.Context) (*CardInfo, error
 		return nil, fmt.Errorf("failed to create card: %w", err)
 	}
 	
-	return &CardInfo{CardEntityId: card.CardId}, nil
+	return &CardInfo{
+		CardEntityId: card.CardId,
+		ElementId:    "content_block",
+	}, nil
+}
+
+// updateTextCard updates the card with new text content
+func (m *MessageHandler) updateTextCard(ctx context.Context, msg string, cardInfo *CardInfo) error {
+	return updateTextCard(ctx, msg, cardInfo)
+}
+
+// updateFinalCard updates the final state of the card
+func (m *MessageHandler) updateFinalCard(ctx context.Context, msg string, cardInfo *CardInfo) error {
+	return updateFinalCard(ctx, msg, cardInfo)
+}
+
+// sendOnProcessCardAndDify sends a processing card and handles Dify message processing
+func (m *MessageHandler) sendOnProcessCardAndDify(ctx context.Context, sessionId *string, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
+	return sendOnProcessCardAndDify(ctx, sessionId, msgId, difyHandler)
 }

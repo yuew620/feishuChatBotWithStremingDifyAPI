@@ -10,6 +10,16 @@ import (
 	"start-feishubot/services/cardcreator"
 )
 
+// SessionMode defines the type of session mode
+type SessionMode string
+
+// Session modes
+const (
+	ModePicCreate SessionMode = "pic_create"
+	ModePicVary   SessionMode = "pic_vary"
+	ModeGPT       SessionMode = "gpt"
+)
+
 // HandlerType defines the type of handler
 type HandlerType string
 
