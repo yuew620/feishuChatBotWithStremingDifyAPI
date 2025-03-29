@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"start-feishubot/initialization"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +20,7 @@ type conversationEntry struct {
 }
 
 type DifyClient struct {
-	config *initialization.Config
+	config Config
 	
 	// 用户ID到Dify conversation ID的映射
 	conversationsMu sync.RWMutex
@@ -60,7 +59,7 @@ func mustMarshal(v interface{}) []byte {
 	return data
 }
 
-func NewDifyClient(config *initialization.Config) *DifyClient {
+func NewDifyClient(config Config) *DifyClient {
 	client := &DifyClient{
 		config: config,
 		conversations: make(map[string]conversationEntry),
@@ -149,7 +148,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	}
 
 	// 构建完整的API URL（处理末尾斜杠）
-	baseUrl := strings.TrimRight(d.config.DifyApiUrl, "/")
+	baseUrl := strings.TrimRight(d.config.GetDifyApiUrl(), "/")
 	apiUrl := fmt.Sprintf("%s/v1/chat-messages", baseUrl)
 
 	// 打印请求详情
@@ -157,7 +156,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 		apiUrl,
 		map[string]string{
 			"Content-Type": "application/json",
-			"Authorization": fmt.Sprintf("Bearer %s", d.config.DifyApiKey),
+			"Authorization": fmt.Sprintf("Bearer %s", d.config.GetDifyApiKey()),
 		},
 		string(jsonBody))
 
@@ -171,7 +170,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", d.config.DifyApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", d.config.GetDifyApiKey()))
 
 	// 发送请求
 	client := &http.Client{}
