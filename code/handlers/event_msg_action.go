@@ -52,6 +52,57 @@ type CardInfo struct {
 	CardId string
 }
 
+// Execute processes the incoming message and manages the conversation flow
+func (m *MessageHandler) Execute(a *ActionInfo) bool {
+	log.Printf("Starting Execute for session %s", *a.info.sessionId)
+
+	// Get historical messages
+	aiMessages := m.sessionCache.GetMessages(*a.info.sessionId)
+
+	// Add the new user message
+	userMessage := ai.Message{
+		Role:    "user",
+		Content: a.info.qParsed,
+		Metadata: map[string]string{
+			"session_id": *a.info.sessionId,
+			"user_id":    a.info.userId,
+		},
+	}
+	aiMessages = append(aiMessages, userMessage)
+
+	// Process the message and get the response
+	cardInfo, processedStream, err := m.sendOnProcess(a, aiMessages)
+	if err != nil {
+		log.Printf("Error in sendOnProcess: %v", err)
+		_ = m.updateFinalCard(*a.ctx, fmt.Sprintf("处理消息时出错: %v", err), cardInfo)
+		return false
+	}
+
+	// Handle the processed stream
+	answer := ""
+	for msg := range processedStream {
+		answer += msg
+		if err := m.updateTextCard(*a.ctx, answer, cardInfo); err != nil {
+			log.Printf("Error updating card: %v", err)
+		}
+	}
+
+	// Final update
+	if err := m.updateFinalCard(*a.ctx, answer, cardInfo); err != nil {
+		log.Printf("Error updating final card: %v", err)
+	}
+
+	// Save the conversation
+	aiMessages = append(aiMessages, ai.Message{Role: "assistant", Content: answer})
+	sessionInfo, _ := m.sessionCache.GetSessionInfo(a.info.userId, *a.info.msgId)
+	if err := m.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages, cardInfo.CardId, *a.info.msgId, sessionInfo.ConversationID, sessionInfo.CacheAddress); err != nil {
+		log.Printf("Error saving session messages: %v", err)
+	}
+
+	log.Printf("Execute completed for session %s", *a.info.sessionId)
+	return true
+}
+
 // sendOnProcessCardAndDify sends a processing card and starts the Dify chat
 func (m *MessageHandler) sendOnProcessCardAndDify(ctx context.Context, sessionId, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
 	log.Printf("Creating processing card for session %s", *sessionId)
