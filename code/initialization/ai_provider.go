@@ -101,19 +101,25 @@ func validateAIConfig(config *Config) error {
 	return nil
 }
 
+var factoriesRegistered sync.Once
+
 // registerFactories 注册所有支持的AI提供商工厂
 func registerFactories(manager *ai.FactoryManager) error {
-	// 注册Dify工厂
-	if err := manager.RegisterFactory(ai.ProviderTypeDify, &dify.DifyFactory{}); err != nil {
-		return fmt.Errorf("failed to register Dify factory: %v", err)
-	}
+	var err error
+	factoriesRegistered.Do(func() {
+		// 注册Dify工厂
+		if e := manager.RegisterFactory(ai.ProviderTypeDify, &dify.DifyFactory{}); e != nil {
+			err = fmt.Errorf("failed to register Dify factory: %v", e)
+			return
+		}
 
-	// 这里可以注册其他提供商的工厂
-	// if err := manager.RegisterFactory(ai.ProviderTypeOpenAI, &openai.OpenAIFactory{}); err != nil {
-	//     return fmt.Errorf("failed to register OpenAI factory: %v", err)
-	// }
-
-	return nil
+		// 这里可以注册其他提供商的工厂
+		// if e := manager.RegisterFactory(ai.ProviderTypeOpenAI, &openai.OpenAIFactory{}); e != nil {
+		//     err = fmt.Errorf("failed to register OpenAI factory: %v", e)
+		//     return
+		// }
+	})
+	return err
 }
 
 // 全局Dify客户端实例
