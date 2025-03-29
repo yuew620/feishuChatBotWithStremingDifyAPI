@@ -6,6 +6,7 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/accesscontrol"
 	"start-feishubot/services/cardservice"
+	"start-feishubot/services/factory"
 )
 
 var handler MessageHandlerInterface
@@ -31,10 +32,10 @@ func InitHandlers(config initialization.Config) error {
 	})
 
 	// 创建消息处理器
-	sessionCache := initialization.GetSessionCache()
-	cardCreator := initialization.GetCardCreator()
-	msgCache := initialization.GetMsgCache()
-	gpt := initialization.GetOpenAIService()
+	sessionCache := factory.GetSessionCache()
+	cardCreator := factory.GetCardCreator()
+	msgCache := factory.GetMsgCache()
+	gpt := factory.GetOpenAIService()
 	
 	h := NewMessageHandler(sessionCache, cardCreator, msgCache, gpt)
 	handler = h
