@@ -3,11 +3,12 @@ package handlers
 import (
 	"context"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
+	"start-feishubot/initialization"
 	"start-feishubot/services"
 	"start-feishubot/services/openai"
 )
 
-func NewPicResolutionHandler(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+func NewPicResolutionHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicResolutionKind {
 			CommonProcessPicResolution(cardMsg, cardAction, m.sessionCache)
@@ -17,7 +18,7 @@ func NewPicResolutionHandler(cardMsg CardMsg, m MessageHandler) CardHandlerFunc 
 	}
 }
 
-func NewPicModeChangeHandler(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+func NewPicModeChangeHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicModeChangeKind {
 			newCard, err, done := CommonProcessPicModeChange(cardMsg, m.sessionCache)
@@ -29,7 +30,8 @@ func NewPicModeChangeHandler(cardMsg CardMsg, m MessageHandler) CardHandlerFunc 
 		return nil, ErrNextHandler
 	}
 }
-func NewPicTextMoreHandler(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+
+func NewPicTextMoreHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicTextMoreKind {
 			go func() {
@@ -45,19 +47,16 @@ func CommonProcessPicResolution(msg CardMsg,
 	cardAction *larkcard.CardAction,
 	cache services.SessionServiceCacheInterface) {
 	option := cardAction.Action.Option
-	//fmt.Println(larkcore.Prettify(msg))
 	cache.SetPicResolution(msg.SessionId, option)
-	//send text
 	replyMsg(context.Background(), "已更新图片分辨率为"+option,
 		&msg.MsgId)
 }
 
 func (m *MessageHandler) CommonProcessPicMore(msg CardMsg) {
 	resolution := m.sessionCache.GetPicResolution(msg.SessionId)
-	//fmt.Println("resolution: ", resolution)
-	//fmt.Println("msg: ", msg)
 	question := msg.Value.(string)
-	gpt := openai.NewChatGPT(m.config)
+	config := initialization.GetConfig()
+	gpt := openai.NewChatGPT(config)
 	bs64, _ := gpt.GenerateOneImage(question, resolution)
 	replayImageCardByBase64(context.Background(), bs64, &msg.MsgId,
 		&msg.SessionId, question)

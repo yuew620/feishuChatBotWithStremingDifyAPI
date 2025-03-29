@@ -11,45 +11,14 @@ import (
 	"time"
 )
 
+import (
+	"start-feishubot/services"
+)
+
 // MessageHandler handles the processing of messages
 type MessageHandler struct {
-	sessionCache SessionCache
+	sessionCache services.SessionServiceCacheInterface
 	cardCreator  cardcreator.CardCreator
-}
-
-// SessionCache interface for session-related operations
-type SessionCache interface {
-	GetMessages(sessionID string) []ai.Message
-	SetMessages(sessionID, userID string, messages []ai.Message, cardID, msgID, conversationID, cacheAddress string) error
-	GetSessionInfo(userID, msgID string) (*SessionInfo, error)
-}
-
-// SessionInfo contains information about a session
-type SessionInfo struct {
-	CardId         string
-	ConversationID string
-	CacheAddress   string
-}
-
-// ActionInfo contains information about the current action
-type ActionInfo struct {
-	ctx        *context.Context
-	info       *MsgInfo
-	handler    *MessageHandler
-}
-
-// MsgInfo contains information about the message
-type MsgInfo struct {
-	sessionId *string
-	msgId     *string
-	chatId    string
-	qParsed   string
-	userId    string
-}
-
-// CardInfo contains information about the card
-type CardInfo struct {
-	CardId string
 }
 
 // Execute processes the incoming message and manages the conversation flow

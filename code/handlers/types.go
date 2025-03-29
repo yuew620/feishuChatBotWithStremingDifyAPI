@@ -2,9 +2,62 @@ package handlers
 
 import (
 	"context"
+	"errors"
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+)
+
+// CardMsg represents a card message
+type CardMsg struct {
+	Kind      string
+	SessionId string
+	MsgId     string
+	Value     interface{}
+}
+
+// CardHandlerFunc defines the function type for handling card actions
+type CardHandlerFunc func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error)
+
+// CardInfo contains information about a card
+type CardInfo struct {
+	CardId string
+}
+
+// MsgInfo contains information about a message
+type MsgInfo struct {
+	handlerType HandlerType
+	msgType     string
+	sessionId   *string
+	msgId       *string
+	chatId      string
+	qParsed     string
+	userId      string
+	mention     []*larkim.MentionEvent
+}
+
+// ActionInfo contains information about an action
+type ActionInfo struct {
+	ctx     *context.Context
+	info    *MsgInfo
+	handler *MessageHandler
+}
+
+// Action defines the interface for actions
+type Action interface {
+	Execute(a *ActionInfo) bool
+}
+
+var (
+	ErrNextHandler = errors.New("next handler")
+)
+
+// Card action kinds
+const (
+	PicResolutionKind  = "pic_resolution"
+	PicModeChangeKind  = "pic_mode_change"
+	PicTextMoreKind    = "pic_text_more"
+	ClearCardKind      = "clear_card"
 )
 
 // HandlerType 定义处理器类型
