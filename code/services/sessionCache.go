@@ -50,6 +50,10 @@ type SessionMeta struct {
 	Size       int64       `json:"size"`        // 会话大小（字节）
 	PicResolution string    `json:"pic_resolution,omitempty"` // 图片分辨率设置
 	SystemMsg []openai.Messages `json:"system_msg,omitempty"` // 系统消息
+	CardId     string      `json:"card_id,omitempty"`     // 卡片ID
+	MessageId  string      `json:"message_id,omitempty"`  // 消息ID
+	ConversationID string  `json:"conversation_id,omitempty"` // Dify对话ID
+	CacheAddress string    `json:"cache_address,omitempty"`   // 消息缓存地址
 }
 
 // SessionService 会话服务
@@ -77,7 +81,7 @@ type SessionStats struct {
 // SessionServiceCacheInterface 会话服务接口
 type SessionServiceCacheInterface interface {
 	GetMessages(sessionId string) []ai.Message
-	SetMessages(sessionId string, userId string, messages []ai.Message) error
+	SetMessages(sessionId string, userId string, messages []ai.Message, cardId string, messageId string, conversationID string, cacheAddress string) error
 	GetMode(sessionId string) SessionMode
 	SetMode(sessionId string, mode SessionMode)
 	Clear(sessionId string)
@@ -88,6 +92,7 @@ type SessionServiceCacheInterface interface {
 	SetPicResolution(sessionId string, resolution string)
 	GetPicResolution(sessionId string) string
 	SetMsg(sessionId string, msg []openai.Messages)
+	GetSessionMeta(sessionId string) (*SessionMeta, bool)
 }
 
 var (
@@ -173,7 +178,7 @@ func (s *SessionService) GetMessages(sessionId string) []ai.Message {
 }
 
 // SetMessages 设置会话消息
-func (s *SessionService) SetMessages(sessionId string, userId string, messages []ai.Message) error {
+func (s *SessionService) SetMessages(sessionId string, userId string, messages []ai.Message, cardId string, messageId string, conversationID string, cacheAddress string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -222,11 +227,15 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 		}
 		
 		sessionMeta = &SessionMeta{
-			Messages:   messages,
-			UserId:     userId,
-			UpdatedAt:  time.Now(),
-			MessageNum: len(messages),
-			Size:       size,
+			Messages:       messages,
+			UserId:         userId,
+			UpdatedAt:      time.Now(),
+			MessageNum:     len(messages),
+			Size:           size,
+			CardId:         cardId,
+			MessageId:      messageId,
+			ConversationID: conversationID,
+			CacheAddress:   cacheAddress,
 		}
 		atomic.AddInt32(&s.totalSessions, 1)
 		s.userSessionCount[userId]++
@@ -237,6 +246,10 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 		sessionMeta.UpdatedAt = time.Now()
 		sessionMeta.MessageNum = len(messages)
 		sessionMeta.Size = size
+		sessionMeta.CardId = cardId
+		sessionMeta.MessageId = messageId
+		sessionMeta.ConversationID = conversationID
+		sessionMeta.CacheAddress = cacheAddress
 	}
 
 	atomic.AddInt64(&s.totalMemoryUsed, size)
@@ -467,4 +480,17 @@ func (s *SessionService) GetPicResolution(sessionId string) string {
 		return "512x512" // 默认分辨率
 	}
 	return sessionMeta.PicResolution
+}
+
+// GetSessionMeta 获取会话元数据
+func (s *SessionService) GetSessionMeta(sessionId string) (*SessionMeta, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessionContext, ok := s.cache.Get(sessionId)
+	if !ok {
+		return nil, false
+	}
+	sessionMeta := sessionContext.(*SessionMeta)
+	return sessionMeta, true
 }
