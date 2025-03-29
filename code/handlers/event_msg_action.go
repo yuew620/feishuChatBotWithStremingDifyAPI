@@ -69,10 +69,24 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
 
+	// 从会话缓存中获取历史消息
+	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
+	
+	// 添加用户新消息，并设置元数据
+	userMessage := ai.Message{
+		Role:    "user",
+		Content: a.info.qParsed,
+		Metadata: map[string]string{
+			"session_id": *a.info.sessionId,
+			"user_id":    a.info.userId,
+		},
+	}
+	aiMessages = append(aiMessages, userMessage)
+
 	// 发送处理中卡片并开始流式聊天
 	cardCreateStart := time.Now()
 	log.Printf("[Timing] 2. 开始创建卡片和发送AI请求: %v", cardCreateStart.Format("2006-01-02 15:04:05.000"))
-	cardInfo, chatResponseStream, err := sendOnProcess(a)
+	cardInfo, chatResponseStream, err := sendOnProcess(a, aiMessages)
 	if err != nil {
 		log.Printf("Failed to send processing card and start chat: %v", err)
 		return false
@@ -181,20 +195,7 @@ func printErrorMessage(a *ActionInfo, msg []ai.Message, err error) {
 	log.Printf("Failed request: UserId: %s , Request: %s , Err: %s", a.info.userId, msg, err)
 }
 
-func sendOnProcess(a *ActionInfo) (*CardInfo, chan string, error) {
-	// 从会话缓存中获取历史消息
-	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
-	
-	// 添加用户新消息，并设置元数据
-	userMessage := ai.Message{
-		Role:    "user",
-		Content: a.info.qParsed,
-		Metadata: map[string]string{
-			"session_id": *a.info.sessionId,
-			"user_id":    a.info.userId,
-		},
-	}
-	aiMessages = append(aiMessages, userMessage)
+func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
 	
 	// 创建响应通道
 	responseStream := make(chan string, 10)
