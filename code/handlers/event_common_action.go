@@ -3,36 +3,16 @@ package handlers
 import (
 	"context"
 	"fmt"
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
+	"start-feishubot/services"
 	"start-feishubot/services/openai"
 	"start-feishubot/utils"
+
+	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-type MsgInfo struct {
-	handlerType HandlerType
-	msgType     string
-	msgId       *string
-	chatId      *string
-	userId      string
-	qParsed     string
-	fileKey     string
-	imageKey    string
-	sessionId   *string
-	mention     []*larkim.MentionEvent
-}
-type ActionInfo struct {
-	handler *MessageHandler
-	ctx     *context.Context
-	info    *MsgInfo
-}
-
-type Action interface {
-	Execute(a *ActionInfo) bool
-}
-
-type ProcessedUniqueAction struct { //消息唯一性
-}
+type ProcessedUniqueAction struct{}
 
 func (*ProcessedUniqueAction) Execute(a *ActionInfo) bool {
 	if a.handler.msgCache.IfProcessed(*a.info.msgId) {

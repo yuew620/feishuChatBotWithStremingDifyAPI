@@ -13,31 +13,17 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
 	"github.com/google/uuid"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
+	"start-feishubot/services"
+	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/cardservice"
 	"start-feishubot/services/openai"
 )
 
-type CardKind string
-type CardChatType string
-
-var (
-	ClearCardKind      = CardKind("clear")            // 清空上下文
-	PicModeChangeKind  = CardKind("pic_mode_change")  // 切换图片创作模式
-	PicResolutionKind  = CardKind("pic_resolution")   // 图片分辨率调整
-	PicTextMoreKind    = CardKind("pic_text_more")    // 重新根据文本生成图片
-	PicVarMoreKind     = CardKind("pic_var_more")     // 变量图片
-	RoleTagsChooseKind = CardKind("role_tags_choose") // 内置角色所属标签选择
-	RoleChooseKind     = CardKind("role_choose")      // 内置角色选择
-)
-
-var (
-	GroupChatType = CardChatType("group")
-	UserChatType  = CardChatType("personal")
-)
 
 // 全局序列号计数器
 var sequenceCounter int64
@@ -368,12 +354,6 @@ func sendCardEntity(ctx context.Context, cardID string, receiveID string) (strin
 	return result.Data.MessageID, nil
 }
 
-// 卡片信息结构体
-type CardInfo struct {
-	CardEntityId string // 卡片实体ID
-	MessageId    string // 消息ID
-	ElementId    string // 元素ID
-}
 
 // 流式更新文本内容
 func streamUpdateText(ctx context.Context, cardId string, elementId string, content string) error {
@@ -497,13 +477,6 @@ func closeStreamingMode(ctx context.Context, cardId string) error {
 	return nil
 }
 
-type CardMsg struct {
-	Kind      CardKind
-	ChatType  CardChatType
-	Value     interface{}
-	SessionId string
-	MsgId     string
-}
 
 type MenuOption struct {
 	value string

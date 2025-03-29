@@ -3,23 +3,14 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"start-feishubot/initialization"
-	"start-feishubot/services"
-	"start-feishubot/services/ai"
-	"start-feishubot/services/openai"
-	"start-feishubot/services/cardcreator"
 	"strings"
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"start-feishubot/initialization"
+	"start-feishubot/services"
+	"start-feishubot/services/cardcreator"
 )
-
-// MessageHandler handles message processing
-type MessageHandler struct {
-	sessionCache services.SessionServiceCacheInterface
-	cardCreator  cardcreator.CardCreator
-	msgCache     services.MessageCacheInterface
-}
 
 // NewMessageHandler creates a new MessageHandler instance
 func NewMessageHandler(sessionCache services.SessionServiceCacheInterface, cardCreator cardcreator.CardCreator, msgCache services.MessageCacheInterface) *MessageHandler {
@@ -96,10 +87,10 @@ func (m *MessageHandler) cardHandler(ctx context.Context, cardAction *larkcard.C
 
 	methodName := cardAction.Action.Value.Key
 	cardMsg := CardMsg{
-		Kind:      methodName,
+		Kind:      CardKind(methodName),
 		SessionId: cardAction.Action.Value.SessionId,
-		MsgId:    cardAction.Action.Value.MessageId,
-		Value:    cardAction.Action.Value.Value,
+		MsgId:     cardAction.Action.Value.MessageId,
+		Value:     cardAction.Action.Value.Value,
 	}
 
 	handlers := []CardHandlerFunc{

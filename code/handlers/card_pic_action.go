@@ -11,7 +11,7 @@ import (
 func NewPicResolutionHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicResolutionKind {
-			CommonProcessPicResolution(cardMsg, cardAction, m.sessionCache)
+			CommonProcessPicResolution(ctx, cardMsg, cardAction, m.sessionCache)
 			return nil, nil
 		}
 		return nil, ErrNextHandler
@@ -21,7 +21,7 @@ func NewPicResolutionHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc
 func NewPicModeChangeHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicModeChangeKind {
-			newCard, err, done := CommonProcessPicModeChange(cardMsg, m.sessionCache)
+			newCard, err, done := CommonProcessPicModeChange(ctx, cardMsg, m.sessionCache)
 			if done {
 				return newCard, err
 			}
@@ -35,7 +35,7 @@ func NewPicTextMoreHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
 		if cardMsg.Kind == PicTextMoreKind {
 			go func() {
-				m.CommonProcessPicMore(cardMsg)
+				m.CommonProcessPicMore(ctx, cardMsg)
 			}()
 			return nil, nil
 		}
@@ -43,30 +43,29 @@ func NewPicTextMoreHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
 	}
 }
 
-func CommonProcessPicResolution(msg CardMsg,
+func CommonProcessPicResolution(ctx context.Context, msg CardMsg,
 	cardAction *larkcard.CardAction,
 	cache services.SessionServiceCacheInterface) {
 	option := cardAction.Action.Option
 	cache.SetPicResolution(msg.SessionId, option)
-	replyMsg(context.Background(), "已更新图片分辨率为"+option,
+	replyMsg(ctx, "已更新图片分辨率为"+option,
 		&msg.MsgId)
 }
 
-func (m *MessageHandler) CommonProcessPicMore(msg CardMsg) {
+func (m *MessageHandler) CommonProcessPicMore(ctx context.Context, msg CardMsg) {
 	resolution := m.sessionCache.GetPicResolution(msg.SessionId)
 	question := msg.Value.(string)
 	config := initialization.GetConfig()
 	gpt := openai.NewChatGPT(config)
 	bs64, _ := gpt.GenerateOneImage(question, resolution)
-	replayImageCardByBase64(context.Background(), bs64, &msg.MsgId,
+	replayImageCardByBase64(ctx, bs64, &msg.MsgId,
 		&msg.SessionId, question)
 }
 
-func CommonProcessPicModeChange(cardMsg CardMsg,
+func CommonProcessPicModeChange(ctx context.Context, cardMsg CardMsg,
 	session services.SessionServiceCacheInterface) (
 	interface{}, error, bool) {
 	if cardMsg.Value == "1" {
-
 		sessionId := cardMsg.SessionId
 		session.Clear(sessionId)
 		session.SetMode(sessionId,
