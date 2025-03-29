@@ -103,6 +103,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	defer noContentTimeout.Stop()
 
 	// 主循环处理响应
+	streamingStartTime := time.Now()
 	for {
 		select {
 		case err := <-errChan:
@@ -110,13 +111,14 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			if err != nil {
 				errorMsg = fmt.Sprintf("错误: %v", err)
 			}
+			log.Printf("Error received from errChan: %s", errorMsg)
 			_ = updateFinalCard(ctx, errorMsg, cardInfo)
 			return false
 
-			case res, ok := <-chatResponseStream:
+		case res, ok := <-chatResponseStream:
 			if !ok {
 				// 流结束，保存会话并更新最终卡片
-				log.Printf("[Timing] Total streaming time: %v ms", time.Since(startTime).Milliseconds())
+				log.Printf("[Timing] Total streaming time: %v ms", time.Since(streamingStartTime).Milliseconds())
 				return m.handleCompletion(ctx, a, cardInfo, answer, aiMessages)
 			}
 			noContentTimeout.Stop()
@@ -136,7 +138,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			
 			updateStart := time.Now()
 			// 记录日志
-			log.Printf("Updating card with new content: %s", res)
+			log.Printf("Received new content from stream: %s", res)
 			
 			// 直接在主线程中更新，确保顺序正确
 			if err := updateTextCard(ctx, currentAnswer, cardInfo); err != nil {
@@ -147,7 +149,13 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			// 不再添加延迟，让更新速度最大化
 			m.mu.Unlock()
 
+		case <-noContentTimeout.C:
+			log.Printf("No content received for 10 seconds, timing out")
+			_ = updateFinalCard(ctx, "请求超时，未收到响应", cardInfo)
+			return false
+
 		case <-ctx.Done():
+			log.Printf("Context deadline exceeded")
 			_ = updateFinalCard(ctx, "请求超时", cardInfo)
 			return false
 		}
@@ -203,7 +211,6 @@ func printErrorMessage(a *ActionInfo, msg []ai.Message, err error) {
 }
 
 func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
-	
 	// 创建响应通道
 	responseStream := make(chan string, 10)
 	
@@ -221,17 +228,23 @@ func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan stri
 		
 		// 发送请求到Dify服务
 		difyClient := initialization.GetDifyClient()
-		if err := difyClient.StreamChat(ctx, difyMessages, responseStream); err != nil {
+		err := difyClient.StreamChat(ctx, difyMessages, responseStream)
+		if err != nil {
+			log.Printf("Error in Dify StreamChat: %v", err)
 			return fmt.Errorf("failed to send message to Dify: %w", err)
 		}
 		
+		log.Printf("Dify StreamChat completed successfully")
 		return nil
 	}
 	
 	// 使用并行处理函数
 	cardInfo, err := sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
 	if err != nil {
+		log.Printf("Error in sendOnProcessCardAndDify: %v", err)
 		return nil, nil, fmt.Errorf("failed to send processing card: %w", err)
 	}
+	
+	log.Printf("Processing card sent successfully, card ID: %s", cardInfo.CardId)
 	return cardInfo, responseStream, nil
 }
