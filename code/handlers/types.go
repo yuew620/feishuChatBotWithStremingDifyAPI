@@ -66,7 +66,7 @@ type CardMsg struct {
 type CardHandlerFunc func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error)
 
 // CardHandlerMeta defines the function type for creating card handlers
-type CardHandlerMeta func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc
+type CardHandlerMeta func(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc
 
 // CardInfo contains information about a card
 type CardInfo struct {

@@ -8,18 +8,10 @@ import (
 
 func NewCardHandler(m *MessageHandler) CardHandlerFunc {
 	handlers := []CardHandlerMeta{
-		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
-			return NewClearCardHandler(cardMsg, &m)
-		},
-		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
-			return NewPicResolutionHandler(cardMsg, &m)
-		},
-		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
-			return NewPicTextMoreHandler(cardMsg, &m)
-		},
-		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
-			return NewPicModeChangeHandler(cardMsg, &m)
-		},
+		NewClearCardHandler,
+		NewPicResolutionHandler,
+		NewPicTextMoreHandler,
+		NewPicModeChangeHandler,
 	}
 
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
