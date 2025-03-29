@@ -2,7 +2,6 @@ package cardservice
 
 import (
 	"log"
-	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/cardpool"
 	"sync"
 )
