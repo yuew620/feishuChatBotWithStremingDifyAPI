@@ -287,6 +287,14 @@ func (s *SessionService) Clear(sessionId string) {
 		if s.userSessionCount[meta.UserId] <= 0 {
 			delete(s.userSessionCount, meta.UserId)
 		}
+
+		// 从用户消息索引中删除
+		if userMessages, ok := s.userMessageIndex[meta.UserId]; ok {
+			delete(userMessages, meta.MessageId)
+			if len(userMessages) == 0 {
+				delete(s.userMessageIndex, meta.UserId)
+			}
+		}
 	}
 	s.cache.Delete(sessionId)
 }
@@ -526,29 +534,4 @@ func (s *SessionService) isDuplicateMessageUnsafe(userId string, messageId strin
 		return exists
 	}
 	return false
-}
-
-// Clear 清除会话（更新）
-func (s *SessionService) Clear(sessionId string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if item, exists := s.cache.Get(sessionId); exists {
-		meta := item.(*SessionMeta)
-		atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
-		atomic.AddInt32(&s.totalSessions, -1)
-		s.userSessionCount[meta.UserId]--
-		if s.userSessionCount[meta.UserId] <= 0 {
-			delete(s.userSessionCount, meta.UserId)
-		}
-
-		// 从用户消息索引中删除
-		if userMessages, ok := s.userMessageIndex[meta.UserId]; ok {
-			delete(userMessages, meta.MessageId)
-			if len(userMessages) == 0 {
-				delete(s.userMessageIndex, meta.UserId)
-			}
-		}
-	}
-	s.cache.Delete(sessionId)
 }
