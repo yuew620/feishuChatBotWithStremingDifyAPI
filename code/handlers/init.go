@@ -5,16 +5,14 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services/accesscontrol"
-	"start-feishubot/services/ai"
 	"start-feishubot/services/cardservice"
-	"start-feishubot/services/cardpool"
 )
 
 var handler MessageHandlerInterface
 
 func InitHandlers(config initialization.Config) error {
 	// 初始化AI提供商
-	provider, err := initialization.InitAIProvider()
+	_, err := initialization.InitAIProvider()
 	if err != nil {
 		return err
 	}
