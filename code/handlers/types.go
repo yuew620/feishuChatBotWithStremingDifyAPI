@@ -21,11 +21,7 @@ type SessionStats struct {
 	AvgSessionSize     float64   `json:"avg_session_size"`
 }
 
-// SessionMeta contains session metadata
-type SessionMeta struct {
-	ConversationID string
-	CacheAddress   string
-}
+type SessionMeta = services.SessionMeta
 
 // Forward declarations for external types
 type CardCreator interface {
@@ -53,7 +49,7 @@ type SessionServiceCacheInterface interface {
 	GetSessionMeta(sessionId string) (*SessionMeta, bool)
 	IsDuplicateMessage(userId string, messageId string) bool
 	GetCardID(sessionId string, userId string, messageId string) (string, error)
-	GetSessionInfo(userId string, messageId string) (*SessionMeta, error)
+	GetSessionInfo(userId string, messageId string) (*services.SessionMeta, error)
 }
 
 // HandlerType defines the type of handler
@@ -140,7 +136,7 @@ type MessageHandler struct {
 	sessionCache SessionServiceCacheInterface
 	cardCreator  CardCreator
 	msgCache     MessageCacheInterface
-	gpt         *services.OpenAIService
+	gpt         *openai.ChatGPT
 }
 
 // MessageHandlerInterface defines the interface for message handlers
