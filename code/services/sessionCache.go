@@ -561,3 +561,12 @@ func (s *SessionService) GetSessionInfo(userId string, messageId string) (*Sessi
 
 	return nil, fmt.Errorf("session info not found for the given user and message")
 }
+
+// GetCardID 获取卡片ID
+func (s *SessionService) GetCardID(sessionId string, userId string, messageId string) (string, error) {
+	sessionInfo, err := s.GetSessionInfo(userId, messageId)
+	if err != nil {
+		return "", err
+	}
+	return sessionInfo.CardId, nil
+}
