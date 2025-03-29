@@ -1,7 +1,6 @@
 package cardservice
 
 import (
-	"context"
 	"log"
 	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/cardpool"
@@ -14,7 +13,7 @@ var (
 )
 
 // InitCardPool 初始化卡片池
-func InitCardPool(createCardFn cardcreator.CreateCardFunc) {
+func InitCardPool(createCardFn cardpool.CreateCardFn) {
 	poolOnce.Do(func() {
 		// 创建卡片池
 		pool = cardpool.NewCardPool(createCardFn)
