@@ -98,6 +98,8 @@ func (d *DifyClient) cleanupConversations() {
 }
 
 func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, responseStream chan string) error {
+	defer close(responseStream) // Ensure the channel is closed when the function exits
+
 	// 构建请求体
 	lastMsg := messages[len(messages)-1]
 	historicalMessages := messages[:len(messages)-1]
@@ -194,65 +196,79 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []Messages, respon
 	// 处理流式响应
 	reader := bufio.NewReader(resp.Body)
 	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				return nil
+		select {
+		case <-ctx.Done():
+			log.Printf("Context cancelled, stopping stream processing")
+			return ctx.Err()
+		default:
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					log.Printf("Reached end of stream")
+					return nil
+				}
+				return fmt.Errorf("error reading stream: %v", err)
 			}
-			return fmt.Errorf("error reading stream: %v", err)
-		}
 
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		// 解析SSE数据
-		data := strings.TrimPrefix(line, "data: ")
-		var streamResp StreamResponse
-		if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-			// 尝试处理特殊格式
-			if strings.Contains(data, "[DONE]") {
-				return nil // 正常结束
+			if strings.TrimSpace(line) == "" {
+				continue
 			}
-			log.Printf("Error unmarshaling response: %v, data: %s", err, data)
-			continue // 继续处理其他行
-		}
-		
-		// 提取conversation_id并存储到缓存中
-		if userID != "" {
-			// 首先检查响应中是否包含conversation_id
-			respConversationID := streamResp.ConversationId
-			if respConversationID == "" {
-				respConversationID = streamResp.Data.ConversationId
+
+			if !strings.HasPrefix(line, "data: ") {
+				log.Printf("Received non-data line: %s", line)
+				continue
+			}
+
+			// 解析SSE数据
+			data := strings.TrimPrefix(line, "data: ")
+			var streamResp StreamResponse
+			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
+				// 尝试处理特殊格式
+				if strings.Contains(data, "[DONE]") {
+					log.Printf("Received [DONE] signal, ending stream")
+					return nil // 正常结束
+				}
+				log.Printf("Error unmarshaling response: %v, data: %s", err, data)
+				continue // 继续处理其他行
 			}
 			
-			// 如果找到了conversation_id，存储到缓存中
-			if respConversationID != "" && respConversationID != conversationID {
-				d.conversationsMu.Lock()
-				d.conversations[userID] = conversationEntry{
-					conversationID: respConversationID,
-					timestamp:      time.Now(),
+			// 提取conversation_id并存储到缓存中
+			if userID != "" {
+				// 首先检查响应中是否包含conversation_id
+				respConversationID := streamResp.ConversationId
+				if respConversationID == "" {
+					respConversationID = streamResp.Data.ConversationId
 				}
-				d.conversationsMu.Unlock()
-				log.Printf("Stored conversation_id %s for user %s", respConversationID, userID)
 				
-				// 更新当前使用的conversation_id
-				conversationID = respConversationID
+				// 如果找到了conversation_id，存储到缓存中
+				if respConversationID != "" && respConversationID != conversationID {
+					d.conversationsMu.Lock()
+					d.conversations[userID] = conversationEntry{
+						conversationID: respConversationID,
+						timestamp:      time.Now(),
+					}
+					d.conversationsMu.Unlock()
+					log.Printf("Stored conversation_id %s for user %s", respConversationID, userID)
+					
+					// 更新当前使用的conversation_id
+					conversationID = respConversationID
+				}
 			}
-		}
 
-		// 处理不同的事件类型
-		switch streamResp.Event {
-		case "message":
-			responseStream <- streamResp.Data.Text
-		case "error":
-			return fmt.Errorf("stream error: %s", streamResp.Data.Text)
-		case "done":
-			return nil
+			// 处理不同的事件类型
+			switch streamResp.Event {
+			case "message":
+				log.Printf("Received message event: %s", streamResp.Data.Text)
+				responseStream <- streamResp.Data.Text
+			case "error":
+				log.Printf("Received error event: %s", streamResp.Data.Text)
+				return fmt.Errorf("stream error: %s", streamResp.Data.Text)
+			case "done":
+				log.Printf("Received done event")
+				return nil
+			default:
+				log.Printf("Received unknown event type: %s", streamResp.Event)
+			}
 		}
 	}
 }
