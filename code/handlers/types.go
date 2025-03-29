@@ -19,6 +19,8 @@ type SessionStats struct {
 	TotalMemoryUsedMB  float64   `json:"total_memory_used_mb"`
 	ActiveUsers        int       `json:"active_users"`
 	AvgSessionSize     float64   `json:"avg_session_size"`
+	LastCleanupTime    time.Time `json:"last_cleanup_time"`
+	CleanedSessions    int       `json:"cleaned_sessions"`
 }
 
 type SessionMeta = services.SessionMeta

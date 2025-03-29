@@ -86,12 +86,30 @@ func (m *MessageHandler) cardHandler(ctx context.Context, cardAction *larkcard.C
 		return nil, fmt.Errorf("card action is nil")
 	}
 
-	value := cardAction.Action.Value.(map[string]interface{})
-	methodName := value["key"].(string)
+	value, ok := cardAction.Action.Value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid action value type")
+	}
+
+	methodName, ok := value["key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid key type")
+	}
+
+	sessionId, ok := value["sessionId"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid sessionId type")
+	}
+
+	messageId, ok := value["messageId"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid messageId type")
+	}
+
 	cardMsg := CardMsg{
 		Kind:      CardKind(methodName),
-		SessionId: value["sessionId"].(string),
-		MsgId:     value["messageId"].(string),
+		SessionId: sessionId,
+		MsgId:     messageId,
 		Value:     value["value"],
 	}
 
