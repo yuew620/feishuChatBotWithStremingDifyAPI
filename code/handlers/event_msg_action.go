@@ -156,7 +156,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 
 func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, cardInfo *CardInfo, answer string, aiMessages []ai.Message) bool {
 	// 从session中获取会话信息
-	sessionInfo, err := a.handler.sessionCache.GetSessionInfo(a.info.userId, a.info.msgId)
+	sessionInfo, err := a.handler.sessionCache.GetSessionInfo(a.info.userId, *a.info.msgId)
 	if err != nil {
 		log.Printf("Failed to get session info: %v", err)
 		return false
@@ -176,7 +176,7 @@ func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, car
 		})
 
 		// 保存会话消息
-		if err := a.handler.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages, sessionInfo.CardId, a.info.msgId, sessionInfo.ConversationID, sessionInfo.CacheAddress); err != nil {
+		if err := a.handler.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages, sessionInfo.CardId, *a.info.msgId, sessionInfo.ConversationID, sessionInfo.CacheAddress); err != nil {
 			log.Printf("Failed to save session messages: %v", err)
 		}
 	} else {
