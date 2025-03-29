@@ -17,7 +17,7 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
-	"start-feishubot/services"
+	"start-feishubot/services/cardservice"
 	"start-feishubot/services/openai"
 )
 
@@ -1284,56 +1284,106 @@ func createSimpleCard(content string) (string, error) {
 }
 
 
+// 发送处理中卡片并并行处理Dify消息
+func sendOnProcessCardAndDify(ctx context.Context, sessionId *string, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
+	// 创建一个错误通道用于收集错误
+	errChan := make(chan error, 2)
+	var cardInfo *CardInfo
+	var cardInfoMu sync.Mutex
+	
+	// 启动发送卡片的goroutine
+	go func() {
+		info, err := sendOnProcessCard(ctx, sessionId, msgId)
+		if err != nil {
+			errChan <- fmt.Errorf("发送卡片失败: %w", err)
+			return
+		}
+		cardInfoMu.Lock()
+		cardInfo = info
+		cardInfoMu.Unlock()
+		errChan <- nil
+	}()
+	
+	// 启动处理Dify消息的goroutine
+	go func() {
+		if err := difyHandler(ctx); err != nil {
+			errChan <- fmt.Errorf("处理Dify消息失败: %w", err)
+			return
+		}
+		errChan <- nil
+	}()
+	
+	// 等待两个goroutine完成
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil {
+			log.Printf("Error in parallel processing: %v", err)
+			// 继续等待另一个goroutine，但记录错误
+			continue
+		}
+	}
+	
+	// 如果卡片发送成功，返回卡片信息
+	cardInfoMu.Lock()
+	defer cardInfoMu.Unlock()
+	if cardInfo != nil {
+		return cardInfo, nil
+	}
+	
+	// 如果卡片发送失败，使用回退方法
+	return sendOnProcessCardFallback(ctx, sessionId, msgId)
+}
+
 // 发送处理中卡片
 func sendOnProcessCard(ctx context.Context, sessionId *string, msgId *string) (*CardInfo, error) {
 	log.Printf("Sending processing card for message ID: %s", *msgId)
 	
-	// 从卡片池获取卡片ID
-	cardPool := services.GetCardPool()
+	// 获取卡片池实例
+	cardPool := cardservice.GetCardPool()
 	if cardPool == nil {
 		log.Printf("Card pool not initialized, falling back to direct creation")
 		return sendOnProcessCardFallback(ctx, sessionId, msgId)
 	}
 	
-	cardEntityId, err := cardPool.GetCard(ctx)
-	if err != nil {
-		log.Printf("Failed to get card from pool: %v, falling back to direct creation", err)
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
+	// 持续尝试发送卡片，直到成功或完全失败
+	for {
+		// 从卡片池获取卡片ID（会自动触发异步创建新卡片）
+		cardEntityId, err := cardPool.GetCard(ctx)
+		if err != nil {
+			log.Printf("Failed to get card from pool: %v, falling back to direct creation", err)
+			return sendOnProcessCardFallback(ctx, sessionId, msgId)
+		}
+		
+		// 直接使用回复方式发送卡片，不需要验证卡片有效性
+		client := initialization.GetLarkClient()
+		resp, err := client.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
+			MessageId(*msgId).
+			Body(larkim.NewReplyMessageReqBodyBuilder().
+				MsgType(larkim.MsgTypeInteractive).
+				Uuid(uuid.New().String()).
+				Content(fmt.Sprintf("{\"type\":\"card\",\"data\":{\"card_id\":\"%s\"}}", cardEntityId)).
+				Build()).
+			Build())
+		
+		// 如果发送失败，说明卡片可能已过期，继续获取新卡片重试
+		if err != nil || !resp.Success() {
+			if err != nil {
+				log.Printf("Failed to send card: %v, trying next card", err)
+			} else {
+				log.Printf("API error: code=%d, msg=%s, trying next card", resp.Code, resp.Msg)
+			}
+			continue
+		}
+		
+		// 发送成功
+		messageId := *resp.Data.MessageId
+		log.Printf("Successfully sent card entity using reply method, message ID: %s", messageId)
+		
+		return &CardInfo{
+			CardEntityId: cardEntityId,
+			MessageId:    messageId,
+			ElementId:    "content_block",
+		}, nil
 	}
-	
-	// 直接使用回复方式，不需要获取聊天ID
-	log.Printf("Using reply method for sending card entity")
-	
-	// 使用SDK回复消息
-	client := initialization.GetLarkClient()
-	resp, err := client.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
-		MessageId(*msgId).
-		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeInteractive).
-			Uuid(uuid.New().String()).
-			Content(fmt.Sprintf("{\"type\":\"card\",\"data\":{\"card_id\":\"%s\"}}", cardEntityId)).
-			Build()).
-		Build())
-	
-	if err != nil {
-		log.Printf("Failed to reply with card entity: %v", err)
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
-	}
-	
-	if !resp.Success() {
-		log.Printf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
-		return sendOnProcessCardFallback(ctx, sessionId, msgId)
-	}
-	
-	messageId := *resp.Data.MessageId
-	log.Printf("Successfully sent card entity using reply method, message ID: %s", messageId)
-	
-	// 返回卡片信息
-	return &CardInfo{
-		CardEntityId: cardEntityId,
-		MessageId:    messageId,
-		ElementId:    "content_block",
-	}, nil
 }
 
 // 回退方法，使用SDK直接回复消息

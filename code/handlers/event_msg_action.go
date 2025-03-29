@@ -8,6 +8,7 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/accesscontrol"
 	"start-feishubot/services/ai"
+	"start-feishubot/services/dify"
 	"strings"
 	"sync"
 	"time"
@@ -215,7 +216,51 @@ func printErrorMessage(a *ActionInfo, msg []ai.Message, err error) {
 }
 
 func sendOnProcess(a *ActionInfo) (*CardInfo, error) {
-	cardInfo, err := sendOnProcessCard(*a.ctx, a.info.sessionId, a.info.msgId)
+	// 从会话缓存中获取历史消息
+	aiMessages := a.handler.sessionCache.GetMessages(*a.info.sessionId)
+	
+	// 添加用户新消息，并设置元数据
+	userMessage := ai.Message{
+		Role:    "user",
+		Content: a.info.qParsed,
+		Metadata: map[string]string{
+			"session_id": *a.info.sessionId,
+			"user_id":    a.info.userId,
+		},
+	}
+	aiMessages = append(aiMessages, userMessage)
+	
+	// 创建Dify消息处理函数
+	difyHandler := func(ctx context.Context) error {
+		// 预处理消息，准备发送到Dify
+		difyMessages := make([]dify.Messages, len(aiMessages))
+		for i, msg := range aiMessages {
+			difyMessages[i] = dify.Messages{
+				Role:     msg.Role,
+				Content:  msg.Content,
+				Metadata: msg.Metadata,
+			}
+		}
+		
+		// 创建一个临时的响应通道，因为我们只是预热Dify服务
+		tempResponseStream := make(chan string)
+		go func() {
+			// 丢弃所有响应
+			for range tempResponseStream {
+			}
+		}()
+		
+		// 发送请求到Dify服务
+		difyClient := initialization.GetDifyClient()
+		if err := difyClient.StreamChat(ctx, difyMessages, tempResponseStream); err != nil {
+			return fmt.Errorf("failed to send message to Dify: %w", err)
+		}
+		
+		return nil
+	}
+	
+	// 使用并行处理函数
+	cardInfo, err := sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send processing card: %w", err)
 	}

@@ -8,55 +8,42 @@ import (
 	"time"
 )
 
+const (
+	maxRetries = 3
+	poolSize   = 20
+)
+
 // CardPool 管理预创建的卡片实体ID池
 type CardPool struct {
 	cardQueue     []string      // 卡片ID队列
 	mu            sync.Mutex    // 互斥锁保护队列操作
-	minPoolSize   int           // 最小池大小
-	maxPoolSize   int           // 最大池大小
 	createCardFn  func(context.Context, string) (string, error) // 创建卡片的函数
 	defaultContent string       // 默认卡片内容
-	isRunning     bool          // 标记定时器是否运行中
-	stopCh        chan struct{} // 停止定时器的通道
 }
 
 // NewCardPool 创建一个新的卡片池
-func NewCardPool(
-	minSize int, 
-	maxSize int, 
-	createFn func(context.Context, string) (string, error),
-	defaultContent string,
-) *CardPool {
-	if minSize <= 0 {
-		minSize = 10 // 默认最小池大小
-	}
-	if maxSize <= 0 || maxSize < minSize {
-		maxSize = minSize * 2 // 默认最大池大小
-	}
-	
+func NewCardPool(createFn func(context.Context, string) (string, error), defaultContent string) *CardPool {
 	return &CardPool{
-		cardQueue:     make([]string, 0, maxSize),
-		minPoolSize:   minSize,
-		maxPoolSize:   maxSize,
+		cardQueue:     make([]string, 0, poolSize),
 		createCardFn:  createFn,
 		defaultContent: defaultContent,
-		stopCh:        make(chan struct{}),
 	}
 }
 
-// Initialize 初始化卡片池并启动维护协程
+// Initialize 初始化卡片池
 func (p *CardPool) Initialize(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	
-	// 初始填充池
-	err := p.fillPool(ctx)
-	if err != nil {
-		return fmt.Errorf("初始化卡片池失败: %w", err)
+	// 初始填充池到指定大小
+	for i := 0; i < poolSize; i++ {
+		cardID, err := p.createCardWithRetry(ctx)
+		if err != nil {
+			return fmt.Errorf("初始化卡片池失败: %w", err)
+		}
+		p.cardQueue = append(p.cardQueue, cardID)
+		log.Printf("已添加卡片到池中: %s, 当前池大小: %d", cardID, len(p.cardQueue))
 	}
-	
-	// 启动维护协程
-	p.startMaintenanceRoutine(ctx)
 	
 	return nil
 }
@@ -70,99 +57,58 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 	if len(p.cardQueue) > 0 {
 		cardID := p.cardQueue[0]
 		p.cardQueue = p.cardQueue[1:] // 移除队首元素
+		
+		// 异步创建新卡片补充到队列
+		go p.asyncReplenishCard(context.Background())
+		
 		log.Printf("从卡片池获取卡片: %s, 剩余卡片数: %d", cardID, len(p.cardQueue))
 		return cardID, nil
 	}
 	
 	// 队列为空，立即创建一个新卡片
 	log.Printf("卡片池为空，正在创建新卡片...")
-	cardID, err := p.createCardFn(ctx, p.defaultContent)
+	cardID, err := p.createCardWithRetry(ctx)
 	if err != nil {
 		return "", fmt.Errorf("创建卡片失败: %w", err)
 	}
+	
+	// 异步创建新卡片补充到队列
+	go p.asyncReplenishCard(context.Background())
 	
 	log.Printf("成功创建新卡片: %s", cardID)
 	return cardID, nil
 }
 
-// fillPool 填充卡片池至最小大小
-func (p *CardPool) fillPool(ctx context.Context) error {
-	currentSize := len(p.cardQueue)
-	neededCards := p.minPoolSize - currentSize
-	
-	if neededCards <= 0 {
-		return nil // 池已满足最小大小要求
-	}
-	
-	log.Printf("填充卡片池，当前大小: %d, 目标大小: %d", currentSize, p.minPoolSize)
-	
-	// 创建所需数量的卡片
-	for i := 0; i < neededCards; i++ {
+// createCardWithRetry 创建卡片并在失败时重试
+func (p *CardPool) createCardWithRetry(ctx context.Context) (string, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
 		cardID, err := p.createCardFn(ctx, p.defaultContent)
-		if err != nil {
-			return fmt.Errorf("创建卡片失败: %w", err)
+		if err == nil {
+			return cardID, nil
 		}
-		
-		// 将新卡片ID添加到队列尾部
-		p.cardQueue = append(p.cardQueue, cardID)
-		log.Printf("已添加卡片到池中: %s, 当前池大小: %d", cardID, len(p.cardQueue))
+		lastErr = err
+		log.Printf("创建卡片失败(重试 %d/%d): %v", i+1, maxRetries, err)
+		time.Sleep(time.Second * time.Duration(i+1)) // 简单的退避策略
 	}
-	
-	return nil
+	return "", fmt.Errorf("创建卡片重试%d次后仍然失败: %w", maxRetries, lastErr)
 }
 
-// startMaintenanceRoutine 启动维护协程，定期检查并填充池
-func (p *CardPool) startMaintenanceRoutine(ctx context.Context) {
-	if p.isRunning {
-		return // 已经在运行中
+// asyncReplenishCard 异步创建新卡片并添加到队列
+func (p *CardPool) asyncReplenishCard(ctx context.Context) {
+	cardID, err := p.createCardWithRetry(ctx)
+	if err != nil {
+		log.Printf("异步创建卡片失败: %v", err)
+		return
 	}
 	
-	p.isRunning = true
-	p.stopCh = make(chan struct{})
-	
-	go func() {
-		ticker := time.NewTicker(30 * time.Second) // 每30秒检查一次
-		defer ticker.Stop()
-		
-		for {
-			select {
-			case <-ticker.C:
-				func() {
-					maintenanceCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-					
-					p.mu.Lock()
-					defer p.mu.Unlock()
-					
-					// 检查池大小并填充
-					if len(p.cardQueue) < p.minPoolSize {
-						log.Printf("维护协程: 卡片池大小 %d 低于最小值 %d, 正在填充...", len(p.cardQueue), p.minPoolSize)
-						err := p.fillPool(maintenanceCtx)
-						if err != nil {
-							log.Printf("维护协程: 填充卡片池失败: %v", err)
-						}
-					}
-				}()
-			case <-p.stopCh:
-				log.Printf("维护协程: 停止卡片池维护")
-				return
-			case <-ctx.Done():
-				log.Printf("维护协程: 上下文取消，停止卡片池维护")
-				return
-			}
-		}
-	}()
-}
-
-// Stop 停止卡片池维护协程
-func (p *CardPool) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	
-	if p.isRunning {
-		close(p.stopCh)
-		p.isRunning = false
-		log.Printf("卡片池维护已停止")
+	// 确保队列不会超过最大大小
+	if len(p.cardQueue) < poolSize {
+		p.cardQueue = append(p.cardQueue, cardID)
+		log.Printf("异步添加卡片到池中: %s, 当前池大小: %d", cardID, len(p.cardQueue))
 	}
 }
 
@@ -187,7 +133,7 @@ func InitCardPool(ctx context.Context, createFn func(context.Context, string) (s
 	var initErr error
 	
 	initCardPoolOnce.Do(func() {
-		pool := NewCardPool(10, 20, createFn, defaultContent)
+		pool := NewCardPool(createFn, defaultContent)
 		err := pool.Initialize(ctx)
 		if err != nil {
 			initErr = err

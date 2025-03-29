@@ -33,6 +33,8 @@ type DifyProvider struct {
 	bufferMu      sync.Mutex
 	buffer        string
 	lastSendTime  time.Time
+	bufferTimer   *time.Timer
+	responseStream chan string
 }
 
 // Dify API请求结构
@@ -79,6 +81,7 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 		sentContent: make(map[string]bool),
 		conversations: make(map[string]conversationEntry),
 		lastSendTime: time.Now(),
+		responseStream: make(chan string, 10),
 	}
 	
 	// 启动一个后台goroutine，定期清理过期的会话缓存
@@ -90,8 +93,31 @@ func NewDifyProvider(config ai.Config) *DifyProvider {
 			provider.cleanupConversations()
 		}
 	}()
+
+	// 启动缓冲区定时器
+	provider.bufferTimer = time.NewTimer(300 * time.Millisecond) // 3倍发送间隔
+	go provider.startBufferTimer()
 	
 	return provider
+}
+
+// 启动缓冲区定时器处理
+func (d *DifyProvider) startBufferTimer() {
+	for {
+		<-d.bufferTimer.C
+		d.bufferMu.Lock()
+		if d.buffer != "" {
+			// 发送缓冲区内容
+			select {
+			case d.responseStream <- d.buffer:
+				d.buffer = "" // 清空缓冲区
+			default:
+				log.Printf("Failed to send buffer content: channel full")
+			}
+		}
+		d.bufferMu.Unlock()
+		d.bufferTimer.Reset(300 * time.Millisecond)
+	}
 }
 
 // cleanupConversations 清理超过2小时的会话缓存
@@ -115,6 +141,9 @@ func (d *DifyProvider) cleanupConversations() {
 
 // StreamChat 实现Provider接口
 func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, responseStream chan string) error {
+	// 保存外部响应通道
+	d.responseStream = responseStream
+
 	// Clear sent content map at the start of each chat
 	d.mu.Lock()
 	d.sentContent = make(map[string]bool)
@@ -199,7 +228,7 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 
 		// 创建一个新的上下文，包含用户ID
 		ctxWithSessionID := context.WithValue(ctx, "userID", userID)
-		err := d.doStreamRequest(ctxWithSessionID, reqBody, responseStream)
+		err := d.doStreamRequest(ctxWithSessionID, reqBody)
 		if err == nil {
 			return nil
 		}
@@ -209,7 +238,7 @@ func (d *DifyProvider) StreamChat(ctx context.Context, messages []ai.Message, re
 			log.Printf("Conversation not found, retrying without conversation_id")
 			// 清除conversation_id并重试
 			reqBody.ConversationId = ""
-			err = d.doStreamRequest(ctxWithSessionID, reqBody, responseStream)
+			err = d.doStreamRequest(ctxWithSessionID, reqBody)
 			if err == nil {
 				return nil
 			}
@@ -251,7 +280,7 @@ func (d *DifyProvider) validateMessages(messages []ai.Message) error {
 	return nil
 }
 
-func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamRequest, responseStream chan string) error {
+func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamRequest) error {
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return ai.NewError(ai.ErrInvalidMessage, "error marshaling request", err)
@@ -332,15 +361,22 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 				if err == io.EOF {
 					// 处理最后一行（如果有）
 					if partialLine != "" {
-						if err := d.processSSELine(partialLine, responseStream, ctx); err != nil {
+						if err := d.processSSELine(partialLine, ctx); err != nil {
 							return err
 						}
 					}
 					
 					// 发送缓冲区中剩余的内容
-					if err := d.sendBufferWithRateLimit(responseStream, true); err != nil {
-						return err
+					d.bufferMu.Lock()
+					if d.buffer != "" {
+						select {
+						case d.responseStream <- d.buffer:
+							d.buffer = "" // 清空缓冲区
+						default:
+							log.Printf("Failed to send final buffer content: channel full")
+						}
 					}
+					d.bufferMu.Unlock()
 					
 					return nil
 				}
@@ -356,7 +392,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 				if line == "" {
 					continue
 				}
-				if err := d.processSSELine(line, responseStream, ctx); err != nil {
+				if err := d.processSSELine(line, ctx); err != nil {
 					return err
 				}
 			}
@@ -367,7 +403,7 @@ func (d *DifyProvider) doStreamRequest(ctx context.Context, reqBody streamReques
 	}
 }
 
-func (d *DifyProvider) processSSELine(line string, responseStream chan string, ctx context.Context) error {
+func (d *DifyProvider) processSSELine(line string, ctx context.Context) error {
 	// 从上下文中提取用户ID，用于存储conversation_id
 	userID, _ := ctx.Value("userID").(string)
 	if !strings.HasPrefix(line, "data: ") {
@@ -427,30 +463,32 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			content = streamResp.Answer
 			log.Printf("Using top-level Answer field: %s", content)
 			
-			// 只有当 answer 不为空时，才添加到缓冲区并发送
+			// 只有当 answer 不为空时，才添加到缓冲区
 			if d.sentContent[content] {
 				log.Printf("Skipping duplicate content: %s", content)
 			} else {
 				log.Printf("Adding content to buffer: %s", content)
 				d.sentContent[content] = true
 				
-				// 添加内容到缓冲区
+				// 添加内容到缓冲区并重置定时器
 				d.addToBuffer(content)
-				
-				// 尝试发送缓冲区内容
-				if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
-					return err
-				}
+				d.bufferTimer.Reset(300 * time.Millisecond)
 			}
 		} else {
 			log.Printf("Skipping empty answer in agent_message event")
 		}
-	case "agent_thought":
-		// 当收到agent_thought事件时，触发一次缓冲区内容的发送
-		log.Printf("Received agent_thought event, triggering buffer send")
-		if err := d.sendBufferWithRateLimit(responseStream, false); err != nil {
-			return err
+	case "message":
+		// 非agent消息，触发发送缓冲区内容
+		d.bufferMu.Lock()
+		if d.buffer != "" {
+			select {
+			case d.responseStream <- d.buffer:
+				d.buffer = "" // 清空缓冲区
+			default:
+				log.Printf("Failed to send buffer content: channel full")
+			}
 		}
+		d.bufferMu.Unlock()
 	case "error":
 		if streamResp.Data.ErrorCode != "" {
 			return ai.NewError(ai.ErrInvalidResponse, 
@@ -463,9 +501,16 @@ func (d *DifyProvider) processSSELine(line string, responseStream chan string, c
 			nil)
 	case "done", "message_end":
 		// 消息结束，发送缓冲区中剩余的内容
-		if err := d.sendBufferWithRateLimit(responseStream, true); err != nil {
-			return err
+		d.bufferMu.Lock()
+		if d.buffer != "" {
+			select {
+			case d.responseStream <- d.buffer:
+				d.buffer = "" // 清空缓冲区
+			default:
+				log.Printf("Failed to send buffer content: channel full")
+			}
 		}
+		d.bufferMu.Unlock()
 		return nil
 	case "ping":
 		// 忽略心跳事件
@@ -491,38 +536,6 @@ func (d *DifyProvider) addToBuffer(content string) {
 	
 	// 添加后记录缓冲区的十六进制表示
 	log.Printf("Buffer after adding content, hex: %x", d.buffer)
-}
-
-// sendBufferWithRateLimit 根据时间间隔决定是否发送缓冲区内容
-func (d *DifyProvider) sendBufferWithRateLimit(responseStream chan string, isMessageEnd bool) error {
-	d.bufferMu.Lock()
-	defer d.bufferMu.Unlock()
-	
-	// 如果缓冲区为空，不需要发送
-	if d.buffer == "" {
-		return nil
-	}
-	
-	// 检查是否应该发送内容
-	now := time.Now()
-	shouldSend := now.Sub(d.lastSendTime) >= 150*time.Millisecond
-	
-	// 如果应该发送（时间间隔大于150ms）或者是消息结束，则发送
-	if shouldSend || isMessageEnd {
-		log.Printf("Sending buffered content to response stream: %s", d.buffer)
-		log.Printf("Sending buffer hex: %x", d.buffer)
-		
-		select {
-		case responseStream <- d.buffer:
-			// 发送成功，清空缓冲区并更新最后发送时间
-			d.buffer = ""
-			d.lastSendTime = now
-		default:
-			return ai.NewError(ai.ErrInvalidResponse, "response stream is blocked", nil)
-		}
-	}
-	
-	return nil
 }
 
 // DifyFactory 实现Factory接口

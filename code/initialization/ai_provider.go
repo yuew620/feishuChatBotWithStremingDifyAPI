@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"start-feishubot/services/ai"
 	"start-feishubot/services/ai/dify"
+	"start-feishubot/services/dify"
+	"sync"
 	"time"
 )
 
@@ -103,6 +105,19 @@ func registerFactories(manager *ai.FactoryManager) error {
 	// }
 
 	return nil
+}
+
+// 全局Dify客户端实例
+var difyClient *dify.DifyClient
+var difyClientOnce sync.Once
+
+// GetDifyClient 获取或创建Dify客户端实例
+func GetDifyClient() *dify.DifyClient {
+	difyClientOnce.Do(func() {
+		config := GetConfig()
+		difyClient = dify.NewDifyClient(config)
+	})
+	return difyClient
 }
 
 // ShutdownAIProvider 关闭AI提供商
