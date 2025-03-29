@@ -64,7 +64,7 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	}
 
 	// 创建一个新的context，用于整个请求的生命周期
-	ctx, cancel := context.WithTimeout(*a.ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(*a.ctx, 60*time.Second)
 	defer cancel()
 
 	log.Printf("Processing message: %s from user: %s", a.info.qParsed, a.info.userId)
@@ -103,8 +103,13 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 	noContentTimeout := time.NewTimer(10 * time.Second)
 	defer noContentTimeout.Stop()
 
+	// 设置整个流式处理的超时
+	streamTimeout := time.NewTimer(55 * time.Second)
+	defer streamTimeout.Stop()
+
 	// 主循环处理响应
 	streamingStartTime := time.Now()
+	lastContentTime := time.Now()
 	for {
 		select {
 		case err := <-errChan:
@@ -146,6 +151,8 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 			updateStart := time.Now()
 			// 记录日志
 			log.Printf("Received new content from stream: %s", res)
+			log.Printf("Time since last content: %v ms", time.Since(lastContentTime).Milliseconds())
+			lastContentTime = time.Now()
 			
 			// 直接在主线程中更新，确保顺序正确
 			if err := updateTextCard(ctx, currentAnswer, cardInfo); err != nil {
@@ -159,6 +166,11 @@ func (m *MessageAction) Execute(a *ActionInfo) bool {
 		case <-noContentTimeout.C:
 			log.Printf("No content received for 10 seconds, timing out")
 			_ = updateFinalCard(ctx, "请求超时，未收到响应", cardInfo)
+			return false
+
+		case <-streamTimeout.C:
+			log.Printf("Stream processing timeout after 55 seconds")
+			_ = updateFinalCard(ctx, "处理超时，请重试", cardInfo)
 			return false
 
 		case <-ctx.Done():
