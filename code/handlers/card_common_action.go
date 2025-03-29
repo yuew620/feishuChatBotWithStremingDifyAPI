@@ -3,25 +3,23 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 )
 
-type CardHandlerMeta func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc
-
-type CardHandlerFunc func(ctx context.Context, cardAction *larkcard.CardAction) (
-	interface{}, error)
-
-var ErrNextHandler = fmt.Errorf("next handler")
-
-func NewCardHandler(m MessageHandler) CardHandlerFunc {
+func NewCardHandler(m *MessageHandler) CardHandlerFunc {
 	handlers := []CardHandlerMeta{
-		NewClearCardHandler,
-		NewPicResolutionHandler,
-		NewPicTextMoreHandler,
-		NewPicModeChangeHandler,
-		NewRoleTagCardHandler,
-		NewRoleCardHandler,
+		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+			return NewClearCardHandler(cardMsg, &m)
+		},
+		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+			return NewPicResolutionHandler(cardMsg, &m)
+		},
+		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+			return NewPicTextMoreHandler(cardMsg, &m)
+		},
+		func(cardMsg CardMsg, m MessageHandler) CardHandlerFunc {
+			return NewPicModeChangeHandler(cardMsg, &m)
+		},
 	}
 
 	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
@@ -29,9 +27,9 @@ func NewCardHandler(m MessageHandler) CardHandlerFunc {
 		actionValue := cardAction.Action.Value
 		actionValueJson, _ := json.Marshal(actionValue)
 		json.Unmarshal(actionValueJson, &cardMsg)
-		//pp.Println(cardMsg)
+		
 		for _, handler := range handlers {
-			h := handler(cardMsg, m)
+			h := handler(cardMsg, *m)
 			i, err := h(ctx, cardAction)
 			if err == ErrNextHandler {
 				continue
