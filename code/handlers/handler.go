@@ -8,12 +8,10 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
-	"start-feishubot/services"
-	"start-feishubot/services/cardcreator"
 )
 
 // NewMessageHandler creates a new MessageHandler instance
-func NewMessageHandler(sessionCache services.SessionServiceCacheInterface, cardCreator cardcreator.CardCreator, msgCache services.MessageCacheInterface) *MessageHandler {
+func NewMessageHandler(sessionCache SessionServiceCacheInterface, cardCreator CardCreator, msgCache MessageCacheInterface) *MessageHandler {
 	return &MessageHandler{
 		sessionCache: sessionCache,
 		cardCreator:  cardCreator,

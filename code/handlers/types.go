@@ -6,9 +6,52 @@ import (
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	"start-feishubot/services"
-	"start-feishubot/services/cardcreator"
+	"start-feishubot/services/ai"
+	"start-feishubot/services/openai"
 )
+
+// SessionStats contains session statistics
+type SessionStats struct {
+	TotalSessions      int32     `json:"total_sessions"`
+	TotalMemoryUsedMB  float64   `json:"total_memory_used_mb"`
+	ActiveUsers        int       `json:"active_users"`
+	AvgSessionSize     float64   `json:"avg_session_size"`
+}
+
+// SessionMeta contains session metadata
+type SessionMeta struct {
+	ConversationID string
+	CacheAddress   string
+}
+
+// Forward declarations for external types
+type CardCreator interface {
+	CreateCard(ctx context.Context, content string) (*struct{ CardId string }, error)
+}
+
+type MessageCacheInterface interface {
+	IfProcessed(msgId string) bool
+	TagProcessed(msgId string)
+}
+
+type SessionServiceCacheInterface interface {
+	GetMessages(sessionId string) []ai.Message
+	SetMessages(sessionId string, userId string, messages []ai.Message, cardId string, messageId string, conversationID string, cacheAddress string) error
+	GetMode(sessionId string) SessionMode
+	SetMode(sessionId string, mode SessionMode)
+	Clear(sessionId string)
+	ClearUserSessions(userId string)
+	GetUserSessions(userId string) []string
+	CleanExpiredSessions() int
+	GetStats() SessionStats
+	SetPicResolution(sessionId string, resolution string)
+	GetPicResolution(sessionId string) string
+	SetMsg(sessionId string, msg []openai.Messages)
+	GetSessionMeta(sessionId string) (*SessionMeta, bool)
+	IsDuplicateMessage(userId string, messageId string) bool
+	GetCardID(sessionId string, userId string, messageId string) (string, error)
+	GetSessionInfo(userId string, messageId string) (*SessionMeta, error)
+}
 
 // SessionMode defines the type of session mode
 type SessionMode string
@@ -101,9 +144,9 @@ type Action interface {
 
 // MessageHandler defines the message handler struct
 type MessageHandler struct {
-	sessionCache services.SessionServiceCacheInterface
-	cardCreator  cardcreator.CardCreator
-	msgCache     services.MessageCacheInterface
+	sessionCache SessionServiceCacheInterface
+	cardCreator  CardCreator
+	msgCache     MessageCacheInterface
 }
 
 // MessageHandlerInterface defines the interface for message handlers
