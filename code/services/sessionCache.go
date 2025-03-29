@@ -97,6 +97,7 @@ type SessionServiceCacheInterface interface {
 	SetMsg(sessionId string, msg []openai.Messages)
 	GetSessionMeta(sessionId string) (*SessionMeta, bool)
 	IsDuplicateMessage(userId string, messageId string) bool
+	GetCardID(sessionId string, userId string, messageId string) (string, error)
 }
 
 var (
@@ -534,4 +535,29 @@ func (s *SessionService) isDuplicateMessageUnsafe(userId string, messageId strin
 		return exists
 	}
 	return false
+}
+
+// GetSessionInfo 获取会话信息
+func (s *SessionService) GetSessionInfo(userId string, messageId string) (*SessionMeta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// 从用户消息索引中获取会话信息
+	if userMessages, ok := s.userMessageIndex[userId]; ok {
+		if sessionMeta, exists := userMessages[messageId]; exists {
+			return sessionMeta, nil
+		}
+	}
+
+	// 如果在用户消息索引中找不到，遍历所有会话查找
+	items := s.cache.Items()
+	for _, item := range items {
+		if sessionMeta, ok := item.Object.(*SessionMeta); ok {
+			if sessionMeta.UserId == userId && sessionMeta.MessageId == messageId {
+				return sessionMeta, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("session info not found for the given user and message")
 }
