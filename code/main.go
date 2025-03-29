@@ -134,6 +134,9 @@ func main() {
 			log.Printf("Error shutting down AI provider: %v", err)
 		}
 
+		// 关闭卡片池
+		initialization.ShutdownCardPool()
+
 		// 关闭HTTP服务器
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("Server forced to shutdown: %v", err)
@@ -156,9 +159,19 @@ func main() {
 }
 
 func initCardPool(ctx context.Context) {
-	services.InitCardPool(ctx, func(ctx context.Context, content string) (string, error) {
-		return handlers.CreateCardEntity(ctx, content)
-	}, "")
+	// 创建卡片创建函数
+	createCardFn := func(ctx context.Context) (string, error) {
+		card, err := handlers.CreateCardEntity(ctx, "正在处理中...")
+		if err != nil {
+			return "", fmt.Errorf("failed to create card: %w", err)
+		}
+		return card, nil
+	}
+
+	// 初始化卡片池
+	if err := initialization.InitCardPool(createCardFn); err != nil {
+		log.Printf("Warning: Failed to initialize card pool: %v", err)
+	}
 }
 
 func enableLog() *lumberjack.Logger {

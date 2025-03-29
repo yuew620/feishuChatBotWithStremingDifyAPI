@@ -123,10 +123,10 @@ func (p *CardPool) fillPool(ctx context.Context) {
 
 		// 异步创建新卡片
 		go func() {
-			if err := p.createCardWithRetry(ctx); err != nil {
+			if err := p.CreateCardWithRetry(ctx); err != nil {
 				log.Printf("Failed to create card during pool fill: %v", err)
 				// 继续尝试创建，避免池子逐渐缩小
-				go p.createCardWithRetry(ctx)
+				go p.CreateCardWithRetry(ctx)
 			}
 		}()
 
@@ -135,8 +135,8 @@ func (p *CardPool) fillPool(ctx context.Context) {
 	}
 }
 
-// createCardWithRetry 创建卡片并进行重试
-func (p *CardPool) createCardWithRetry(ctx context.Context) error {
+// CreateCardWithRetry 创建卡片并进行重试
+func (p *CardPool) CreateCardWithRetry(ctx context.Context) error {
 	var cardID string
 	var err error
 	
@@ -185,10 +185,10 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 
 		// 异步创建一个新卡片补充到池中
 		go func() {
-			if err := p.createCardWithRetry(ctx); err != nil {
+			if err := p.CreateCardWithRetry(ctx); err != nil {
 				log.Printf("Failed to create replacement card: %v", err)
 				// 继续尝试创建，避免池子逐渐缩小
-				go p.createCardWithRetry(ctx)
+				go p.CreateCardWithRetry(ctx)
 			}
 		}()
 
@@ -202,10 +202,10 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 
 	// 异步创建新卡片补充到池中
 	go func() {
-		if err := p.createCardWithRetry(ctx); err != nil {
+		if err := p.CreateCardWithRetry(ctx); err != nil {
 			log.Printf("Failed to create replacement card: %v", err)
 			// 继续尝试创建，避免池子逐渐缩小
-			go p.createCardWithRetry(ctx)
+			go p.CreateCardWithRetry(ctx)
 		}
 	}()
 

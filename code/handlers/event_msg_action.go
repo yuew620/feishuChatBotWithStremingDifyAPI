@@ -13,7 +13,17 @@ import (
 
 import (
 	"start-feishubot/services"
+	"start-feishubot/services/cardpool"
+	"sync"
 )
+
+// MessageBuffer 用于缓存消息内容
+type MessageBuffer struct {
+	content    string
+	lastUpdate time.Time
+	timer      *time.Timer
+	mu         sync.Mutex
+}
 
 // MessageHandler handles the processing of messages
 type MessageHandler struct {
@@ -131,12 +141,52 @@ func (m *MessageHandler) updateFinalCard(ctx context.Context, content string, ca
 	return m.updateTextCard(ctx, content, cardInfo)
 }
 
+// getOrCreateCard 从卡片池获取卡片或创建新卡片
+func (m *MessageHandler) getOrCreateCard(ctx *context.Context) (*CardInfo, error) {
+	// 从卡片池获取卡片
+	cardPool := initialization.GetCardPool()
+	if cardPool != nil {
+		cardID, err := cardPool.GetCard(*ctx)
+		if err == nil {
+			log.Printf("Got card from pool: %s", cardID)
+			return &CardInfo{CardId: cardID}, nil
+		}
+		log.Printf("Failed to get card from pool: %v, creating new card", err)
+	}
+
+	// 如果卡片池不可用或获取失败，直接创建新卡片
+	card, err := m.cardCreator.CreateCard(*ctx, "正在处理中...")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create card: %w", err)
+	}
+	
+	return &CardInfo{CardId: card.CardId}, nil
+}
+
 func (m *MessageHandler) sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
 	log.Printf("Starting sendOnProcess for session %s", *a.info.sessionId)
 	
-	// 创建响应通道
+	// 获取或创建卡片
+	cardInfo, err := m.getOrCreateCard(a.ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get or create card: %w", err)
+	}
+
+	// 创建响应通道和缓冲区
 	responseStream := make(chan string, 10)
-	
+	messageBuffer := &MessageBuffer{
+		content:    "",
+		lastUpdate: time.Now(),
+		timer:      time.NewTimer(300 * time.Millisecond), // 3倍的发送间隔
+	}
+
+	// 获取会话信息
+	sessionInfo, _ := m.sessionCache.GetSessionInfo(a.info.userId, *a.info.msgId)
+	var conversationID string
+	if sessionInfo != nil {
+		conversationID = sessionInfo.ConversationID
+	}
+
 	// 创建Dify消息处理函数
 	difyHandler := func(ctx context.Context) error {
 		log.Printf("Starting Dify handler for session %s", *a.info.sessionId)
@@ -153,35 +203,91 @@ func (m *MessageHandler) sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (
 		
 		// 发送请求到Dify服务
 		difyClient := initialization.GetDifyClient()
-		log.Printf("Sending StreamChat request to Dify for session %s", *a.info.sessionId)
-		
-		streamStartTime := time.Now()
+		log.Printf("Sending StreamChat request to Dify for session %s with conversationID: %s", *a.info.sessionId, conversationID)
 		
 		// 创建一个带有超时的上下文
 		streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		
-		errChan := make(chan error, 1)
+
+		// 创建消息处理通道
+		processedStream := make(chan string, 10)
+		defer close(processedStream)
+
+		var lastSendTime time.Time
+		var lastContent string
+		var cardSent bool
+
+		// 启动消息处理goroutine
 		go func() {
-			errChan <- difyClient.StreamChat(streamCtx, difyMessages, responseStream)
-		}()
-		
-		select {
-		case err := <-errChan:
-			streamDuration := time.Since(streamStartTime)
-			if err != nil {
-				log.Printf("Error in Dify StreamChat for session %s: %v (duration: %v)", *a.info.sessionId, err, streamDuration)
-				close(responseStream)
-				return fmt.Errorf("failed to send message to Dify: %w", err)
+			for msg := range processedStream {
+				messageBuffer.mu.Lock()
+				messageBuffer.content += msg
+
+				now := time.Now()
+				shouldSend := false
+
+				// 检查是否需要发送消息
+				if !cardSent || now.Sub(lastSendTime) > 100*time.Millisecond {
+					shouldSend = true
+				}
+
+				if shouldSend {
+					if err := m.updateTextCard(*a.ctx, messageBuffer.content, cardInfo); err != nil {
+						log.Printf("Error updating card: %v", err)
+						// 如果卡片发送失败，尝试获取新卡片
+						if newCardInfo, err := m.getOrCreateCard(a.ctx); err == nil {
+							cardInfo = newCardInfo
+							// 重试发送
+							if err := m.updateTextCard(*a.ctx, messageBuffer.content, cardInfo); err != nil {
+								log.Printf("Error updating card with new card: %v", err)
+								messageBuffer.mu.Unlock()
+								continue
+							}
+						}
+					}
+					lastSendTime = now
+					lastContent = messageBuffer.content
+					cardSent = true
+				}
+
+				// 重置定时器
+				messageBuffer.timer.Reset(300 * time.Millisecond)
+				messageBuffer.mu.Unlock()
 			}
-			log.Printf("Dify StreamChat completed successfully for session %s (duration: %v)", *a.info.sessionId, streamDuration)
-			return nil
-		case <-streamCtx.Done():
-			streamDuration := time.Since(streamStartTime)
-			log.Printf("Dify StreamChat timed out for session %s after %v", *a.info.sessionId, streamDuration)
-			close(responseStream)
-			return fmt.Errorf("Dify StreamChat timed out after %v", streamDuration)
-		}
+
+			// 最后一次发送
+			messageBuffer.mu.Lock()
+			if messageBuffer.content != "" && messageBuffer.content != lastContent {
+				if err := m.updateTextCard(*a.ctx, messageBuffer.content, cardInfo); err != nil {
+					log.Printf("Error updating final card: %v", err)
+				}
+			}
+			messageBuffer.content = ""
+			messageBuffer.mu.Unlock()
+		}()
+
+		// 启动定时器处理goroutine
+		go func() {
+			for {
+				select {
+				case <-messageBuffer.timer.C:
+					messageBuffer.mu.Lock()
+					if messageBuffer.content != "" && messageBuffer.content != lastContent {
+						if err := m.updateTextCard(*a.ctx, messageBuffer.content, cardInfo); err != nil {
+							log.Printf("Error updating card in timer: %v", err)
+						} else {
+							lastContent = messageBuffer.content
+						}
+						messageBuffer.content = ""
+					}
+					messageBuffer.mu.Unlock()
+				case <-streamCtx.Done():
+					return
+				}
+			}
+		}()
+
+		return difyClient.StreamChat(streamCtx, difyMessages, processedStream)
 	}
 	
 	// 使用并行处理函数
