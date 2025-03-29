@@ -7,8 +7,21 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/ai"
 	"start-feishubot/services/dify"
+	"start-feishubot/services/cardcreator"
 	"time"
 )
+
+// MessageHandler handles the processing of messages
+type MessageHandler struct {
+	sessionCache SessionCache
+	// Add other necessary fields
+}
+
+// SessionCache interface for session-related operations
+type SessionCache interface {
+	GetMessages(sessionID string) []ai.Message
+	// Add other necessary methods
+}
 
 // ActionInfo contains information about the current action
 type ActionInfo struct {
