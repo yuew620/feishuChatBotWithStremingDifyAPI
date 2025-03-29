@@ -1,3 +1,45 @@
+package handlers
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"start-feishubot/initialization"
+	"start-feishubot/services/ai"
+	"start-feishubot/services/dify"
+	"time"
+)
+
+// ActionInfo contains information about the current action
+type ActionInfo struct {
+	ctx        *context.Context
+	info       *MsgInfo
+	handler    *MessageHandler
+}
+
+// MsgInfo contains information about the message
+type MsgInfo struct {
+	sessionId *string
+	msgId     *string
+	chatId    string
+	qParsed   string
+	userId    string
+}
+
+// CardInfo contains information about the card
+type CardInfo struct {
+	CardId string
+}
+
+// sendOnProcessCardAndDify sends a processing card and starts the Dify chat
+func sendOnProcessCardAndDify(ctx context.Context, sessionId, msgId *string, difyHandler func(context.Context) error) (*CardInfo, error) {
+	// Implementation details...
+	// This is a placeholder implementation. You should replace this with the actual implementation.
+	cardInfo := &CardInfo{CardId: "placeholder_card_id"}
+	err := difyHandler(ctx)
+	return cardInfo, err
+}
+
 func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan string, error) {
 	log.Printf("Starting sendOnProcess for session %s", *a.info.sessionId)
 	
