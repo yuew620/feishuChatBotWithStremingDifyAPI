@@ -169,7 +169,7 @@ func (m *MessageAction) handleCompletion(ctx context.Context, a *ActionInfo, car
 		})
 
 		// 保存会话消息
-		if err := a.handler.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages, cardInfo.CardID, a.info.msgId, "", ""); err != nil {
+		if err := a.handler.sessionCache.SetMessages(*a.info.sessionId, a.info.userId, aiMessages, cardInfo.ID, a.info.msgId, "", ""); err != nil {
 			log.Printf("Failed to save session messages: %v", err)
 		}
 	} else {
