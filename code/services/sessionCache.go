@@ -66,6 +66,9 @@ type SessionService struct {
 	totalMemoryUsed int64          // 总内存使用
 	userSessionCount map[string]int // 用户会话计数
 	stats           *SessionStats   // 会话统计
+
+	// 新增: 用户消息索引
+	userMessageIndex map[string]map[string]*SessionMeta // map[userId]map[messageId]*SessionMeta
 }
 
 // SessionStats 会话统计
@@ -93,6 +96,7 @@ type SessionServiceCacheInterface interface {
 	GetPicResolution(sessionId string) string
 	SetMsg(sessionId string, msg []openai.Messages)
 	GetSessionMeta(sessionId string) (*SessionMeta, bool)
+	IsDuplicateMessage(userId string, messageId string) bool
 }
 
 var (
@@ -107,6 +111,7 @@ func GetSessionCache() SessionServiceCacheInterface {
 			cache:            cache.New(DefaultExpiration, CleanupInterval),
 			userSessionCount: make(map[string]int),
 			stats:           &SessionStats{},
+			userMessageIndex: make(map[string]map[string]*SessionMeta),
 		}
 		
 		// 启动定期清理
@@ -182,6 +187,11 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 检查是否为重复消息
+	if s.isDuplicateMessageUnsafe(userId, messageId) {
+		return fmt.Errorf("duplicate message")
+	}
+
 	// 验证消息
 	for _, msg := range messages {
 		if err := msg.Validate(); err != nil {
@@ -254,6 +264,13 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 
 	atomic.AddInt64(&s.totalMemoryUsed, size)
 	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
+
+	// 更新用户消息索引
+	if _, ok := s.userMessageIndex[userId]; !ok {
+		s.userMessageIndex[userId] = make(map[string]*SessionMeta)
+	}
+	s.userMessageIndex[userId][messageId] = sessionMeta
+
 	return nil
 }
 
@@ -493,4 +510,45 @@ func (s *SessionService) GetSessionMeta(sessionId string) (*SessionMeta, bool) {
 	}
 	sessionMeta := sessionContext.(*SessionMeta)
 	return sessionMeta, true
+}
+
+// IsDuplicateMessage 检查是否为重复消息
+func (s *SessionService) IsDuplicateMessage(userId string, messageId string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.isDuplicateMessageUnsafe(userId, messageId)
+}
+
+// isDuplicateMessageUnsafe 内部使用的非线程安全版本
+func (s *SessionService) isDuplicateMessageUnsafe(userId string, messageId string) bool {
+	if userMessages, ok := s.userMessageIndex[userId]; ok {
+		_, exists := userMessages[messageId]
+		return exists
+	}
+	return false
+}
+
+// Clear 清除会话（更新）
+func (s *SessionService) Clear(sessionId string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if item, exists := s.cache.Get(sessionId); exists {
+		meta := item.(*SessionMeta)
+		atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
+		atomic.AddInt32(&s.totalSessions, -1)
+		s.userSessionCount[meta.UserId]--
+		if s.userSessionCount[meta.UserId] <= 0 {
+			delete(s.userSessionCount, meta.UserId)
+		}
+
+		// 从用户消息索引中删除
+		if userMessages, ok := s.userMessageIndex[meta.UserId]; ok {
+			delete(userMessages, meta.MessageId)
+			if len(userMessages) == 0 {
+				delete(s.userMessageIndex, meta.UserId)
+			}
+		}
+	}
+	s.cache.Delete(sessionId)
 }
