@@ -98,6 +98,7 @@ type SessionServiceCacheInterface interface {
 	GetSessionMeta(sessionId string) (*SessionMeta, bool)
 	IsDuplicateMessage(userId string, messageId string) bool
 	GetCardID(sessionId string, userId string, messageId string) (string, error)
+	GetSessionInfo(userId string, messageId string) (*SessionMeta, error)
 }
 
 var (
