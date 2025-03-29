@@ -38,6 +38,7 @@ func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan stri
 			streamDuration := time.Since(streamStartTime)
 			if err != nil {
 				log.Printf("Error in Dify StreamChat for session %s: %v (duration: %v)", *a.info.sessionId, err, streamDuration)
+				close(responseStream)
 				return fmt.Errorf("failed to send message to Dify: %w", err)
 			}
 			log.Printf("Dify StreamChat completed successfully for session %s (duration: %v)", *a.info.sessionId, streamDuration)
@@ -45,6 +46,7 @@ func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan stri
 		case <-streamCtx.Done():
 			streamDuration := time.Since(streamStartTime)
 			log.Printf("Dify StreamChat timed out for session %s after %v", *a.info.sessionId, streamDuration)
+			close(responseStream)
 			return fmt.Errorf("Dify StreamChat timed out after %v", streamDuration)
 		}
 	}
@@ -54,6 +56,7 @@ func sendOnProcess(a *ActionInfo, aiMessages []ai.Message) (*CardInfo, chan stri
 	cardInfo, err := sendOnProcessCardAndDify(*a.ctx, a.info.sessionId, a.info.msgId, difyHandler)
 	if err != nil {
 		log.Printf("Error in sendOnProcessCardAndDify for session %s: %v", *a.info.sessionId, err)
+		close(responseStream)
 		return nil, nil, fmt.Errorf("failed to send processing card: %w", err)
 	}
 	
