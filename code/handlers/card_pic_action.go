@@ -79,10 +79,10 @@ func CommonProcessPicModeChange(ctx context.Context, msg CardMsg, session servic
 	// Set the mode in the session cache
 	mode, ok := msg.Value.(string)
 	if !ok {
-		mode = string(ModePicCreate) // Default mode
-	}
-	
-	session.SetMode(msg.SessionId, SessionMode(mode))
+	mode = string(services.ModePicCreate) // Default mode
+}
+
+session.SetMode(msg.SessionId, services.SessionMode(mode))
 	
 	// Create a new card with the mode
 	newCard, _ := newSendCard(

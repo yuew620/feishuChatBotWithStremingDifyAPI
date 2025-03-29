@@ -8,7 +8,10 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/services/ai"
 	"start-feishubot/services/openai"
+	"start-feishubot/services"
 )
+
+type SessionMode = services.SessionMode
 
 // SessionStats contains session statistics
 type SessionStats struct {
@@ -52,16 +55,6 @@ type SessionServiceCacheInterface interface {
 	GetCardID(sessionId string, userId string, messageId string) (string, error)
 	GetSessionInfo(userId string, messageId string) (*SessionMeta, error)
 }
-
-// SessionMode defines the type of session mode
-type SessionMode string
-
-// Session modes
-const (
-	ModePicCreate SessionMode = "pic_create"
-	ModePicVary   SessionMode = "pic_vary"
-	ModeGPT       SessionMode = "gpt"
-)
 
 // HandlerType defines the type of handler
 type HandlerType string
@@ -147,6 +140,7 @@ type MessageHandler struct {
 	sessionCache SessionServiceCacheInterface
 	cardCreator  CardCreator
 	msgCache     MessageCacheInterface
+	gpt         *services.OpenAIService
 }
 
 // MessageHandlerInterface defines the interface for message handlers

@@ -31,10 +31,12 @@ func InitHandlers(config initialization.Config) error {
 	})
 
 	// 创建消息处理器
-	h, err := NewMessageHandler(config)
-	if err != nil {
-		return err
-	}
+	sessionCache := initialization.GetSessionCache()
+	cardCreator := initialization.GetCardCreator()
+	msgCache := initialization.GetMsgCache()
+	gpt := initialization.GetOpenAIService()
+	
+	h := NewMessageHandler(sessionCache, cardCreator, msgCache, gpt)
 	handler = h
 	return nil
 }

@@ -8,14 +8,16 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
+	"start-feishubot/services"
 )
 
 // NewMessageHandler creates a new MessageHandler instance
-func NewMessageHandler(sessionCache SessionServiceCacheInterface, cardCreator CardCreator, msgCache MessageCacheInterface) *MessageHandler {
+func NewMessageHandler(sessionCache SessionServiceCacheInterface, cardCreator CardCreator, msgCache MessageCacheInterface, gpt *services.OpenAIService) *MessageHandler {
 	return &MessageHandler{
 		sessionCache: sessionCache,
 		cardCreator:  cardCreator,
 		msgCache:     msgCache,
+		gpt:         gpt,
 	}
 }
 
@@ -74,7 +76,7 @@ func (m *MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P
 		handler: m,
 	}
 	
-	return m.Execute(actionInfo)
+	return m.ExecuteChain(actionInfo)
 }
 
 // cardHandler handles card actions
@@ -111,8 +113,8 @@ func (m *MessageHandler) cardHandler(ctx context.Context, cardAction *larkcard.C
 	return nil, fmt.Errorf("no handler found for method: %s", methodName)
 }
 
-// Execute processes the action through the responsibility chain
-func (m *MessageHandler) Execute(a *ActionInfo) error {
+// ExecuteChain processes the action through the responsibility chain
+func (m *MessageHandler) ExecuteChain(a *ActionInfo) error {
 	actions := []Action{
 		&ProcessedUniqueAction{},
 		&ProcessMentionAction{},
