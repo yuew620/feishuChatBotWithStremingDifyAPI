@@ -9,6 +9,4 @@ type Config struct {
 	HttpPort           string
 	FeishuAppID        string
 	FeishuAppSecret    string
-	AccessControlEnable bool
-	AccessControlUsers  []string
 }

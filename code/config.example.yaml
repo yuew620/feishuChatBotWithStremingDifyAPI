@@ -21,9 +21,5 @@ CERT_FILE: "cert.pem"  # SSL证书文件
 KEY_FILE: "key.pem"  # SSL密钥文件
 ENABLE_LOG: true  # 是否启用日志
 
-# 访问控制
-ACCESS_CONTROL_ENABLE: true  # 是否启用访问控制
-ACCESS_CONTROL_MAX_COUNT_PER_USER_PER_DAY: 100  # 每用户每日最大请求次数
-
 # 代理配置（可选）
 HTTP_PROXY: ""  # HTTP代理地址

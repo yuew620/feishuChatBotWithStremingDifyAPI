@@ -27,7 +27,6 @@ type Config struct {
 	UseHttps                           bool
 	CertFile                           string
 	KeyFile                            string
-	AccessControlMaxCountPerUserPerDay int
 }
 
 var (
@@ -72,8 +71,6 @@ func LoadConfig(cfg string) *Config {
 			HttpPort:          getViperStringValue("HTTP_PORT", "9000"),
 			FeishuAppID:      getViperStringValue("APP_ID", ""),
 			FeishuAppSecret:  getViperStringValue("APP_SECRET", ""),
-			AccessControlEnable: getViperBoolValue("ACCESS_CONTROL_ENABLE", false),
-			AccessControlUsers:  strings.Split(getViperStringValue("ACCESS_CONTROL_USERS", ""), ","),
 		},
 		EnableLog:                          getViperBoolValue("ENABLE_LOG", false),
 		FeishuBotName:                      getViperStringValue("BOT_NAME", ""),
@@ -81,7 +78,6 @@ func LoadConfig(cfg string) *Config {
 		UseHttps:                           getViperBoolValue("USE_HTTPS", false),
 		CertFile:                           getViperStringValue("CERT_FILE", "cert.pem"),
 		KeyFile:                            getViperStringValue("KEY_FILE", "key.pem"),
-		AccessControlMaxCountPerUserPerDay: getViperIntValue("ACCESS_CONTROL_MAX_COUNT_PER_USER_PER_DAY", 0),
 		
 		// AI Provider配置
 		AIApiUrl:                           getViperStringValue("AI_API_URL", ""),

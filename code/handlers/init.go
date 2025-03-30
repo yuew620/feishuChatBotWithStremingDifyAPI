@@ -4,7 +4,6 @@ import (
 	"context"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
-	"start-feishubot/services/accesscontrol"
 	"start-feishubot/services/cardservice"
 	"start-feishubot/services/factory"
 )
@@ -16,14 +15,6 @@ func InitHandlers(cfg *initialization.Config) error {
 	_, err := initialization.InitAIProvider()
 	if err != nil {
 		return err
-	}
-
-	// 初始化访问控制
-	if cfg.AccessControlEnable {
-		err := accesscontrol.InitAccessControl(&cfg.Config)
-		if err != nil {
-			return err
-		}
 	}
 
 	// 初始化卡片池
