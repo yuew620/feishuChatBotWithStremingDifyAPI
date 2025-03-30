@@ -6,7 +6,6 @@ import (
 	"fmt"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/services/ai"
-	"start-feishubot/services/core"
 )
 
 type MessageEventHandler struct {
@@ -31,7 +30,7 @@ func NewMessageEventHandler(ctx *context.Context, info *MsgInfo, handler *Messag
 	}
 }
 
-func processMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handler *MessageHandler) error {
+func handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handler *MessageHandler) error {
 	info := NewMsgInfo(event)
 
 	// Create action info
@@ -46,16 +45,13 @@ func processMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handl
 	}
 
 	// Get message content
-	content, err := event.Event.Message.Content.MarshalJSON()
-	if err != nil {
-		return err
-	}
+	content := *event.Event.Message.Content
 
 	// Parse content
 	var msg struct {
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal(content, &msg); err != nil {
+	if err := json.Unmarshal([]byte(content), &msg); err != nil {
 		return err
 	}
 
@@ -85,7 +81,7 @@ func processMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handl
 	// Process response
 	for response := range responseStream {
 		// Send message
-		_, err = handler.cardCreator.CreateCardEntity(ctx, response)
+		_, err := handler.cardCreator.CreateCardEntity(ctx, response)
 		if err != nil {
 			return err
 		}
