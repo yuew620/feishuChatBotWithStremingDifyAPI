@@ -8,7 +8,7 @@ import (
 )
 
 // GetTextContent extracts text content from message
-func GetTextContent(msg *larkim.Message) (string, error) {
+func GetTextContent(msg *larkim.EventMessage) (string, error) {
 	var textContent struct {
 		Text string `json:"text"`
 	}
@@ -20,7 +20,7 @@ func GetTextContent(msg *larkim.Message) (string, error) {
 }
 
 // GetImageContent extracts image key from message
-func GetImageContent(msg *larkim.Message) (string, error) {
+func GetImageContent(msg *larkim.EventMessage) (string, error) {
 	var imageContent struct {
 		ImageKey string `json:"image_key"`
 	}
@@ -32,7 +32,7 @@ func GetImageContent(msg *larkim.Message) (string, error) {
 }
 
 // GetAudioContent extracts audio key from message
-func GetAudioContent(msg *larkim.Message) (string, error) {
+func GetAudioContent(msg *larkim.EventMessage) (string, error) {
 	var audioContent struct {
 		FileKey string `json:"file_key"`
 	}
@@ -44,7 +44,7 @@ func GetAudioContent(msg *larkim.Message) (string, error) {
 }
 
 // GetFileContent extracts file key from message
-func GetFileContent(msg *larkim.Message) (string, error) {
+func GetFileContent(msg *larkim.EventMessage) (string, error) {
 	var fileContent struct {
 		FileKey string `json:"file_key"`
 	}
@@ -75,7 +75,7 @@ func GetChatType(event *larkim.P2MessageReceiveV1) string {
 }
 
 // GetContent extracts content from event
-func GetContent(event *larkim.P2MessageReceiveV1) (*larkim.Message, error) {
+func GetContent(event *larkim.P2MessageReceiveV1) (*larkim.EventMessage, error) {
 	content := event.Event.Message
 	if content == nil {
 		return nil, fmt.Errorf("empty message content")

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 )
 
