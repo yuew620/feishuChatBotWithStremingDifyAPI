@@ -1,15 +1,38 @@
 package initialization
 
 import (
+	"fmt"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	"start-feishubot/services/config"
 )
 
-var larkClient *lark.Client
+var client *lark.Client
 
-func LoadLarkClient(config *Config) {
-	larkClient = lark.NewClient(config.FeishuAppId, config.FeishuAppSecret)
+// InitLarkClient initializes the Lark client
+func InitLarkClient() (*lark.Client, error) {
+	if client != nil {
+		return client, nil
+	}
+
+	// Get configuration
+	cfg := GetConfig()
+	if !cfg.IsInitialized() {
+		return nil, fmt.Errorf("configuration not initialized")
+	}
+
+	// Create Lark client
+	client = lark.NewClient(
+		cfg.GetFeishuAppID(),
+		cfg.GetFeishuAppSecret(),
+	)
+
+	return client, nil
 }
 
+// GetLarkClient returns the initialized Lark client
 func GetLarkClient() *lark.Client {
-	return larkClient
+	if client == nil {
+		client, _ = InitLarkClient()
+	}
+	return client
 }

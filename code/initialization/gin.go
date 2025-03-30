@@ -1,71 +1,64 @@
 package initialization
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"log"
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"start-feishubot/services/config"
 )
 
-func loadCertificate(config Config) (cert tls.Certificate, err error) {
-	cert, err = tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
-	if err != nil {
-		return cert, fmt.Errorf("failed to load certificate: %v", err)
+var engine *gin.Engine
+
+// InitGin initializes the Gin engine
+func InitGin() (*gin.Engine, error) {
+	if engine != nil {
+		return engine, nil
 	}
 
-	// check certificate expiry
-	if len(cert.Certificate) == 0 {
-		return cert, fmt.Errorf("no certificates found in %s", config.CertFile)
-	}
-	parsedCert, err := x509.ParseCertificate(cert.Certificate[0])
-	if err != nil {
-		return cert, fmt.Errorf("failed to parse certificate: %v", err)
-	}
-	cert.Leaf = parsedCert
-	certExpiry := cert.Leaf.NotAfter
-	if certExpiry.Before(time.Now()) {
-		return cert, fmt.Errorf("certificate expired on %v", certExpiry)
+	// Get configuration
+	cfg := GetConfig()
+	if !cfg.IsInitialized() {
+		return nil, fmt.Errorf("configuration not initialized")
 	}
 
-	return cert, nil
+	// Create Gin engine
+	engine = gin.New()
+
+	// Add middleware
+	engine.Use(gin.Recovery())
+	engine.Use(corsMiddleware())
+	engine.Use(requestLogger())
+
+	return engine, nil
 }
 
-func startHTTPServer(config Config, r *gin.Engine) (err error) {
-	log.Printf("http server started: http://localhost:%d/webhook/event\n", config.HttpPort)
-	err = r.Run(fmt.Sprintf(":%d", config.HttpPort))
-	if err != nil {
-		return fmt.Errorf("failed to start http server: %v", err)
+// GetGin returns the initialized Gin engine
+func GetGin() *gin.Engine {
+	if engine == nil {
+		engine, _ = InitGin()
 	}
-	return nil
+	return engine
 }
-func startHTTPSServer(config Config, r *gin.Engine) (err error) {
-	cert, err := loadCertificate(config)
-	if err != nil {
-		return fmt.Errorf("failed to load certificate: %v", err)
+
+// corsMiddleware adds CORS headers to responses
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
 	}
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", config.HttpsPort),
-		Handler: r,
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		},
-	}
-	fmt.Printf("https server started: https://localhost:%d/webhook/event\n", config.HttpsPort)
-	err = server.ListenAndServeTLS("", "")
-	if err != nil {
-		return fmt.Errorf("failed to start https server: %v", err)
-	}
-	return nil
 }
-func StartServer(config Config, r *gin.Engine) (err error) {
-	if config.UseHttps {
-		err = startHTTPSServer(config, r)
-	} else {
-		err = startHTTPServer(config, r)
-	}
-	return err
+
+// requestLogger logs incoming requests
+func requestLogger() gin.HandlerFunc {
+	return gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	})
 }

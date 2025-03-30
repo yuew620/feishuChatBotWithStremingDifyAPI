@@ -1,142 +1,98 @@
 package initialization
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"start-feishubot/services/ai"
-	"start-feishubot/services/ai/dify"
-	difyservice "start-feishubot/services/dify"
+	"start-feishubot/services/config"
+	"start-feishubot/services/dify"
 	"sync"
-	"time"
 )
 
-// AIConfigWrapper 配置适配器
+// AIConfigWrapper wraps configuration for AI services
 type AIConfigWrapper struct {
-	config *Config
+	config config.Config
 }
 
-func NewAIConfigWrapper(config *Config) *AIConfigWrapper {
-	return &AIConfigWrapper{config: config}
+// NewAIConfigWrapper creates a new AI config wrapper
+func NewAIConfigWrapper(config config.Config) *AIConfigWrapper {
+	return &AIConfigWrapper{
+		config: config,
+	}
 }
 
-// 实现ai.Config接口
-func (w *AIConfigWrapper) GetProviderType() string {
-	return w.config.AIProviderType
+// GetDifyAPIEndpoint returns the Dify API endpoint
+func (c *AIConfigWrapper) GetDifyAPIEndpoint() string {
+	return c.config.GetDifyAPIEndpoint()
 }
 
-func (w *AIConfigWrapper) GetApiUrl() string {
-	return w.config.AIApiUrl
+// GetDifyAPIKey returns the Dify API key
+func (c *AIConfigWrapper) GetDifyAPIKey() string {
+	return c.config.GetDifyAPIKey()
 }
 
-func (w *AIConfigWrapper) GetApiKey() string {
-	return w.config.AIApiKey
-}
+var (
+	aiProvider ai.Provider
+	aiOnce     sync.Once
+)
 
-func (w *AIConfigWrapper) GetModel() string {
-	return w.config.AIModel
-}
-
-func (w *AIConfigWrapper) GetTimeout() time.Duration {
-	return time.Duration(w.config.AITimeout) * time.Second
-}
-
-func (w *AIConfigWrapper) GetMaxRetries() int {
-	return w.config.AIMaxRetries
-}
-
-// 实现dify.Config接口
-func (w *AIConfigWrapper) GetDifyApiUrl() string {
-	return w.config.AIApiUrl
-}
-
-func (w *AIConfigWrapper) GetDifyApiKey() string {
-	return w.config.AIApiKey
-}
-
-// InitAIProvider 初始化AI提供商
+// InitAIProvider initializes the AI provider
 func InitAIProvider() (ai.Provider, error) {
-	config := GetConfig()
-	
-	// 验证基本配置
-	if err := validateAIConfig(config); err != nil {
-		return nil, fmt.Errorf("invalid AI configuration: %v", err)
-	}
-
-	// 创建配置适配器
-	aiConfig := NewAIConfigWrapper(config)
-
-	// 获取工厂管理器
-	factoryManager := ai.GetFactoryManager()
-
-	// 注册支持的AI提供商工厂
-	if err := registerFactories(factoryManager); err != nil {
-		return nil, fmt.Errorf("failed to register factories: %v", err)
-	}
-
-	// 创建提供商实例
-	provider, err := factoryManager.CreateProvider(aiConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create AI provider: %v", err)
-	}
-
-	return provider, nil
-}
-
-// validateAIConfig 验证AI配置
-func validateAIConfig(config *Config) error {
-	if config.AIProviderType == "" {
-		return fmt.Errorf("AI_PROVIDER_TYPE is required")
-	}
-	if config.AIApiUrl == "" {
-		return fmt.Errorf("AI_API_URL is required")
-	}
-	if config.AIApiKey == "" {
-		return fmt.Errorf("AI_API_KEY is required")
-	}
-	if config.AITimeout <= 0 {
-		return fmt.Errorf("AI_TIMEOUT must be positive")
-	}
-	if config.AIMaxRetries < 0 {
-		return fmt.Errorf("AI_MAX_RETRIES cannot be negative")
-	}
-	return nil
-}
-
-var factoriesRegistered sync.Once
-
-// registerFactories 注册所有支持的AI提供商工厂
-func registerFactories(manager *ai.FactoryManager) error {
-	var err error
-	factoriesRegistered.Do(func() {
-		// 注册Dify工厂
-		if e := manager.RegisterFactory(ai.ProviderTypeDify, &dify.DifyFactory{}); e != nil {
-			err = fmt.Errorf("failed to register Dify factory: %v", e)
+	var initErr error
+	aiOnce.Do(func() {
+		config := GetConfig()
+		if !config.IsInitialized() {
+			initErr = errors.New("configuration not initialized")
 			return
 		}
 
-		// 这里可以注册其他提供商的工厂
-		// if e := manager.RegisterFactory(ai.ProviderTypeOpenAI, &openai.OpenAIFactory{}); e != nil {
-		//     err = fmt.Errorf("failed to register OpenAI factory: %v", e)
-		//     return
-		// }
+		// Create Dify client
+		difyConfig := dify.NewConfigAdapter(config)
+		difyClient := dify.NewDifyClient(difyConfig)
+
+		// Set as global provider
+		aiProvider = difyClient
 	})
-	return err
+
+	if initErr != nil {
+		return nil, fmt.Errorf("failed to initialize AI provider: %v", initErr)
+	}
+
+	if aiProvider == nil {
+		return nil, errors.New("AI provider not initialized")
+	}
+
+	return aiProvider, nil
 }
 
-// 全局Dify客户端实例
-var difyClient *difyservice.DifyClient
-var difyClientOnce sync.Once
-
-// GetDifyClient 获取或创建Dify客户端实例
-func GetDifyClient() *difyservice.DifyClient {
-	difyClientOnce.Do(func() {
-		config := GetConfig()
-		difyClient = difyservice.NewDifyClient(NewAIConfigWrapper(config))
-	})
-	return difyClient
+// GetAIProvider returns the initialized AI provider
+func GetAIProvider() ai.Provider {
+	provider, err := InitAIProvider()
+	if err != nil {
+		log.Printf("Failed to get AI provider: %v", err)
+		return nil
+	}
+	return provider
 }
 
-// ShutdownAIProvider 关闭AI提供商
+// ShutdownAIProvider gracefully shuts down the AI provider
 func ShutdownAIProvider() error {
-	factoryManager := ai.GetFactoryManager()
-	return factoryManager.CloseAllProviders()
+	if aiProvider == nil {
+		return nil
+	}
+
+	// Add any cleanup logic here if needed
+	aiProvider = nil
+	return nil
+}
+
+// StreamChat implements ai.Provider interface for testing
+func StreamChat(ctx context.Context, messages []ai.Message, responseStream chan string) error {
+	provider := GetAIProvider()
+	if provider == nil {
+		return errors.New("AI provider not available")
+	}
+	return provider.StreamChat(ctx, messages, responseStream)
 }
