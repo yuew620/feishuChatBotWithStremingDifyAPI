@@ -6,7 +6,7 @@ import (
 
 var larkClient *lark.Client
 
-func LoadLarkClient(config Config) {
+func LoadLarkClient(config *Config) {
 	larkClient = lark.NewClient(config.FeishuAppId, config.FeishuAppSecret)
 }
 

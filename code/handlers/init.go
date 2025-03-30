@@ -11,7 +11,7 @@ import (
 
 var handler MessageHandlerInterface
 
-func InitHandlers(config initialization.Config) error {
+func InitHandlers(cfg *initialization.Config) error {
 	// 初始化AI提供商
 	_, err := initialization.InitAIProvider()
 	if err != nil {
@@ -19,8 +19,8 @@ func InitHandlers(config initialization.Config) error {
 	}
 
 	// 初始化访问控制
-	if config.AccessControlEnable {
-		err := accesscontrol.InitAccessControl(config)
+	if cfg.AccessControlEnable {
+		err := accesscontrol.InitAccessControl(&cfg.Config)
 		if err != nil {
 			return err
 		}

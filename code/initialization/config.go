@@ -9,42 +9,34 @@ import (
 	"sync"
 
 	"github.com/spf13/viper"
+	"start-feishubot/config"
 )
 
+// Config extends the base config with initialization-specific fields
 type Config struct {
-	// 表示配置是否已经被初始化了。
+	config.Config
+	// Additional initialization-specific fields
 	Initialized                        bool
 	EnableLog                          bool
-	
-	// AI Provider配置
 	AIProviderType                     string
 	AIApiUrl                           string
 	AIApiKey                           string
 	AIModel                            string
-	AITimeout                          int    // 超时时间（秒）
-	AIMaxRetries                       int    // 最大重试次数
-	FeishuAppId                        string
-	FeishuAppSecret                    string
-	FeishuAppEncryptKey                string
-	FeishuAppVerificationToken         string
+	AITimeout                          int
+	AIMaxRetries                       int
 	FeishuBotName                      string
-	OpenaiApiKeys                      []string
-	HttpPort                           int
 	HttpsPort                          int
 	UseHttps                           bool
 	CertFile                           string
 	KeyFile                            string
-	OpenaiApiUrl                       string
 	HttpProxy                          string
 	AzureOn                            bool
 	AzureApiVersion                    string
 	AzureDeploymentName                string
 	AzureResourceName                  string
 	AzureOpenaiToken                   string
-	AccessControlEnable                bool
 	AccessControlMaxCountPerUserPerDay int
 	OpenAIHttpClientTimeOut            int
-	OpenaiModel                        string
 }
 
 var (
@@ -80,30 +72,34 @@ func LoadConfig(cfg string) *Config {
 	//}
 	//fmt.Println(string(content))
 
-	config := &Config{
+	cfg := &Config{
+		Config: config.Config{
+			AppID:              getViperStringValue("APP_ID", ""),
+			AppSecret:         getViperStringValue("APP_SECRET", ""),
+			VerificationToken: getViperStringValue("APP_VERIFICATION_TOKEN", ""),
+			EncryptKey:        getViperStringValue("APP_ENCRYPT_KEY", ""),
+			OpenaiApiKeys:     getViperStringArray("OPENAI_KEY", nil),
+			OpenaiModel:       getViperStringValue("OPENAI_MODEL", "gpt-3.5-turbo"),
+			HttpPort:          getViperStringValue("HTTP_PORT", "9000"),
+			FeishuAppID:      getViperStringValue("APP_ID", ""),
+			FeishuAppSecret:  getViperStringValue("APP_SECRET", ""),
+			AccessControlEnable: getViperBoolValue("ACCESS_CONTROL_ENABLE", false),
+			AccessControlUsers:  strings.Split(getViperStringValue("ACCESS_CONTROL_USERS", ""), ","),
+		},
 		EnableLog:                          getViperBoolValue("ENABLE_LOG", false),
-		FeishuAppId:                        getViperStringValue("APP_ID", ""),
-		FeishuAppSecret:                    getViperStringValue("APP_SECRET", ""),
-		FeishuAppEncryptKey:                getViperStringValue("APP_ENCRYPT_KEY", ""),
-		FeishuAppVerificationToken:         getViperStringValue("APP_VERIFICATION_TOKEN", ""),
 		FeishuBotName:                      getViperStringValue("BOT_NAME", ""),
-		OpenaiApiKeys:                      getViperStringArray("OPENAI_KEY", nil),
-		HttpPort:                           getViperIntValue("HTTP_PORT", 9000),
 		HttpsPort:                          getViperIntValue("HTTPS_PORT", 9001),
 		UseHttps:                           getViperBoolValue("USE_HTTPS", false),
 		CertFile:                           getViperStringValue("CERT_FILE", "cert.pem"),
 		KeyFile:                            getViperStringValue("KEY_FILE", "key.pem"),
-		OpenaiApiUrl:                       getViperStringValue("API_URL", "https://api.openai.com"),
 		HttpProxy:                          getViperStringValue("HTTP_PROXY", ""),
 		AzureOn:                            getViperBoolValue("AZURE_ON", false),
 		AzureApiVersion:                    getViperStringValue("AZURE_API_VERSION", "2023-03-15-preview"),
 		AzureDeploymentName:                getViperStringValue("AZURE_DEPLOYMENT_NAME", ""),
 		AzureResourceName:                  getViperStringValue("AZURE_RESOURCE_NAME", ""),
 		AzureOpenaiToken:                   getViperStringValue("AZURE_OPENAI_TOKEN", ""),
-		AccessControlEnable:                getViperBoolValue("ACCESS_CONTROL_ENABLE", false),
 		AccessControlMaxCountPerUserPerDay: getViperIntValue("ACCESS_CONTROL_MAX_COUNT_PER_USER_PER_DAY", 0),
 		OpenAIHttpClientTimeOut:            getViperIntValue("OPENAI_HTTP_CLIENT_TIMEOUT", 550),
-		OpenaiModel:                        getViperStringValue("OPENAI_MODEL", "gpt-3.5-turbo"),
 		
 		// AI Provider配置
 		AIProviderType:                     getViperStringValue("AI_PROVIDER_TYPE", "dify"),

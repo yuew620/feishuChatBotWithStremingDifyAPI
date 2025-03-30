@@ -46,13 +46,13 @@ func main() {
 	}
 
 	// 初始化飞书客户端
-	initialization.LoadLarkClient(*initialization.GetConfig())
+	initialization.LoadLarkClient(globalConfig)
 	
 	// 初始化卡片池
 	initCardPool(context.Background())
 	
 	// 初始化handlers
-	if err := handlers.InitHandlers(*initialization.GetConfig()); err != nil {
+	if err := handlers.InitHandlers(globalConfig); err != nil {
 		log.Fatalf("failed to initialize handlers: %v", err)
 	}
 

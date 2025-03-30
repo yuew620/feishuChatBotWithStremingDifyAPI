@@ -1,13 +1,14 @@
 package accesscontrol
 
 import (
-	"start-feishubot/initialization"
+	"start-feishubot/config"
 	"start-feishubot/utils"
 	"sync"
 )
 
 // InitAccessControl initializes the access control system
-func InitAccessControl(config initialization.Config) error {
+func InitAccessControl(cfg *config.Config) error {
+	InitConfig(cfg)
 	// Initialize the access control system with the provided configuration
 	// For now, we'll just set the current date flag
 	currentDateFlag = utils.GetCurrentDateAsString()
@@ -45,7 +46,7 @@ func CheckAllowAccessThenIncrement(userId *string) bool {
 
 func CheckAllowAccess(userId *string) bool {
 
-	if initialization.GetConfig().AccessControlMaxCountPerUserPerDay <= 0 {
+	if GetConfig().AccessControlMaxCountPerUserPerDay <= 0 {
 		return true
 	}
 
@@ -57,7 +58,7 @@ func CheckAllowAccess(userId *string) bool {
 	}
 
 	// If the user has accessed more than 100 times, return false
-	if accessedCount.(int) >= initialization.GetConfig().AccessControlMaxCountPerUserPerDay {
+	if accessedCount.(int) >= GetConfig().AccessControlMaxCountPerUserPerDay {
 		return false
 	}
 
