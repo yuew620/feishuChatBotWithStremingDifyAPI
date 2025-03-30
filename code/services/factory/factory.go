@@ -2,7 +2,6 @@ package factory
 
 import (
 	"sync"
-	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/core"
 )
 
