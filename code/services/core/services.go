@@ -11,6 +11,8 @@ import (
 type MessageCache interface {
 	Set(key string, value interface{})
 	Get(key string) (interface{}, bool)
+	IfProcessed(key string) bool
+	TagProcessed(key string)
 }
 
 // CardCreator interface for creating cards
@@ -81,6 +83,7 @@ type SessionCache interface {
 // Basic MessageCache implementation
 type messageCacheImpl struct {
 	cache sync.Map
+	processed sync.Map
 }
 
 func (m *messageCacheImpl) Set(key string, value interface{}) {
@@ -89,6 +92,15 @@ func (m *messageCacheImpl) Set(key string, value interface{}) {
 
 func (m *messageCacheImpl) Get(key string) (interface{}, bool) {
 	return m.cache.Load(key)
+}
+
+func (m *messageCacheImpl) IfProcessed(key string) bool {
+	_, exists := m.processed.Load(key)
+	return exists
+}
+
+func (m *messageCacheImpl) TagProcessed(key string) {
+	m.processed.Store(key, true)
 }
 
 // NewMessageCache creates a new message cache instance

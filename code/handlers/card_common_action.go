@@ -6,28 +6,39 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 )
 
-func NewCardHandler(m *MessageHandler) CardHandlerFunc {
-	handlers := []CardHandlerMeta{
-		NewClearCardHandler,
-		NewPicResolutionHandler,
-		NewPicTextMoreHandler,
-		NewPicModeChangeHandler,
-	}
+type CardHandlerMap map[CardKind]CardHandlerMeta
 
-	return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
-		var cardMsg CardMsg
-		actionValue := cardAction.Action.Value
-		actionValueJson, _ := json.Marshal(actionValue)
-		json.Unmarshal(actionValueJson, &cardMsg)
-		
-		for _, handler := range handlers {
-			h := handler(cardMsg, *m)
-			i, err := h(ctx, cardAction)
-			if err == ErrNextHandler {
-				continue
-			}
-			return i, err
-		}
-		return nil, nil
+func GetCardHandler(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
+	if handler, ok := cardHandlerMap[cardMsg.Kind]; ok {
+		return handler(cardMsg, m)
 	}
+	return nil
+}
+
+var cardHandlerMap = CardHandlerMap{
+	ClearCardKind: func(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
+		return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+			return CommonProcessClearCache(ctx, cardAction, m.sessionCache, cardMsg.SessionId, cardMsg.MsgId)
+		}
+	},
+	PicResolutionKind: func(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
+		return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+			return CommonProcessPicResolution(ctx, cardAction, m.sessionCache, cardMsg.SessionId, cardMsg.MsgId)
+		}
+	},
+	PicModeChangeKind: func(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
+		return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+			return CommonProcessPicModeChange(ctx, cardAction, m.sessionCache, cardMsg.SessionId, cardMsg.MsgId)
+		}
+	},
+	RoleTagsChooseKind: func(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
+		return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+			return CommonProcessRoleTag(ctx, cardAction, m.sessionCache, cardMsg.SessionId, cardMsg.MsgId)
+		}
+	},
+	RoleChooseKind: func(cardMsg CardMsg, m *MessageHandler) CardHandlerFunc {
+		return func(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error) {
+			return CommonProcessRole(ctx, cardAction, m.sessionCache, cardMsg.SessionId, cardMsg.MsgId)
+		}
+	},
 }
