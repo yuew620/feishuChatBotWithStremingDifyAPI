@@ -1,20 +1,20 @@
 package feishu
 
-import "start-feishubot/initialization"
+import "start-feishubot/services/config"
 
-// ConfigAdapter adapts initialization.Config to feishu.Config
+// ConfigAdapter adapts initialization.Config to config.FeishuConfig
 type ConfigAdapter struct {
-	config *initialization.Config
+	config config.FeishuConfig
 }
 
-func NewConfigAdapter(config *initialization.Config) *ConfigAdapter {
+func NewConfigAdapter(config config.FeishuConfig) *ConfigAdapter {
 	return &ConfigAdapter{config: config}
 }
 
 func (a *ConfigAdapter) GetFeishuAppID() string {
-	return a.config.FeishuAppID
+	return a.config.GetFeishuAppID()
 }
 
 func (a *ConfigAdapter) GetFeishuAppSecret() string {
-	return a.config.FeishuAppSecret
+	return a.config.GetFeishuAppSecret()
 }

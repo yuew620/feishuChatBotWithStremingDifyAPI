@@ -1,20 +1,20 @@
 package dify
 
-import "start-feishubot/initialization"
+import "start-feishubot/services/config"
 
-// ConfigAdapter adapts initialization.Config to dify.Config
+// ConfigAdapter adapts initialization.Config to config.DifyConfig
 type ConfigAdapter struct {
-	config *initialization.Config
+	config config.DifyConfig
 }
 
-func NewConfigAdapter(config *initialization.Config) *ConfigAdapter {
+func NewConfigAdapter(config config.DifyConfig) *ConfigAdapter {
 	return &ConfigAdapter{config: config}
 }
 
 func (a *ConfigAdapter) GetDifyApiUrl() string {
-	return a.config.AIApiUrl
+	return a.config.GetDifyApiUrl()
 }
 
 func (a *ConfigAdapter) GetDifyApiKey() string {
-	return a.config.AIApiKey
+	return a.config.GetDifyApiKey()
 }

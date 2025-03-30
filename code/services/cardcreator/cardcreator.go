@@ -8,22 +8,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"start-feishubot/services/config"
 	"start-feishubot/services/feishu"
 	"time"
 )
 
-// Config defines the interface for card creator configuration
-type Config interface {
-	feishu.Config
-}
-
 // CardCreator handles card creation
 type CardCreator struct {
-	config Config
+	config config.FeishuConfig
 }
 
 // NewCardCreator creates a new CardCreator instance
-func NewCardCreator(config Config) *CardCreator {
+func NewCardCreator(config config.FeishuConfig) *CardCreator {
 	return &CardCreator{
 		config: config,
 	}

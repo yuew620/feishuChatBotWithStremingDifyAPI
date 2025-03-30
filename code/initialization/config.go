@@ -29,6 +29,24 @@ type Config struct {
 	KeyFile                            string
 }
 
+// Implement config.FeishuConfig
+func (c *Config) GetFeishuAppID() string {
+	return c.FeishuAppID
+}
+
+func (c *Config) GetFeishuAppSecret() string {
+	return c.FeishuAppSecret
+}
+
+// Implement config.DifyConfig
+func (c *Config) GetDifyApiUrl() string {
+	return c.AIApiUrl
+}
+
+func (c *Config) GetDifyApiKey() string {
+	return c.AIApiKey
+}
+
 var (
 	cfg    = pflag.StringP("config", "c", "./config.yaml", "apiserver config file path.")
 	config *Config

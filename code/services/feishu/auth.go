@@ -7,16 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"start-feishubot/services/config"
 )
 
-// Config defines the interface for Feishu configuration
-type Config interface {
-	GetFeishuAppID() string
-	GetFeishuAppSecret() string
-}
-
 // GetTenantAccessToken 获取tenant_access_token
-func GetTenantAccessToken(ctx context.Context, config Config) (string, error) {
+func GetTenantAccessToken(ctx context.Context, config config.FeishuConfig) (string, error) {
 	// 构建请求体
 	reqBody := map[string]string{
 		"app_id":     config.GetFeishuAppID(),
