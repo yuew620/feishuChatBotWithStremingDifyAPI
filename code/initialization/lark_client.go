@@ -3,7 +3,6 @@ package initialization
 import (
 	"fmt"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
-	"start-feishubot/services/config"
 )
 
 var client *lark.Client

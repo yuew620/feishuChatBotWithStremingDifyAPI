@@ -6,32 +6,9 @@ import (
 	"fmt"
 	"log"
 	"start-feishubot/services/ai"
-	"start-feishubot/services/config"
 	"start-feishubot/services/dify"
 	"sync"
 )
-
-// AIConfigWrapper wraps configuration for AI services
-type AIConfigWrapper struct {
-	config config.Config
-}
-
-// NewAIConfigWrapper creates a new AI config wrapper
-func NewAIConfigWrapper(config config.Config) *AIConfigWrapper {
-	return &AIConfigWrapper{
-		config: config,
-	}
-}
-
-// GetDifyAPIEndpoint returns the Dify API endpoint
-func (c *AIConfigWrapper) GetDifyAPIEndpoint() string {
-	return c.config.GetDifyAPIEndpoint()
-}
-
-// GetDifyAPIKey returns the Dify API key
-func (c *AIConfigWrapper) GetDifyAPIKey() string {
-	return c.config.GetDifyAPIKey()
-}
 
 var (
 	aiProvider ai.Provider

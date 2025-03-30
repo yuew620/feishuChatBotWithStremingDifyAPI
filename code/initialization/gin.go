@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
-	"start-feishubot/services/config"
 )
 
 var engine *gin.Engine
