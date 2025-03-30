@@ -14,9 +14,13 @@ func CommonProcessClearCache(
 	userId string,
 	messageId string,
 ) (interface{}, error) {
-	content := cardAction.Action.Value
+	contentBytes, err := json.Marshal(cardAction.Action.Value)
+	if err != nil {
+		return nil, err
+	}
+
 	var cardMsg CardMsg
-	err := json.Unmarshal([]byte(content), &cardMsg)
+	err = json.Unmarshal(contentBytes, &cardMsg)
 	if err != nil {
 		return nil, err
 	}

@@ -16,10 +16,13 @@ type CommonMessageAction struct {
 }
 
 func (a *CommonMessageAction) Execute(info *ActionInfo) bool {
-	if a.handler.msgCache.IfProcessed(info.info.msgId) {
+	if info.info.msgId == nil {
 		return false
 	}
-	a.handler.msgCache.TagProcessed(info.info.msgId)
+	if a.handler.msgCache.IfProcessed(*info.info.msgId) {
+		return false
+	}
+	a.handler.msgCache.TagProcessed(*info.info.msgId)
 	return true
 }
 
