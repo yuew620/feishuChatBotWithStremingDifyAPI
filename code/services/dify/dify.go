@@ -116,3 +116,9 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []ai.Message, resp
 
 	return nil
 }
+
+// Close implements core.AIProvider interface
+func (d *DifyClient) Close() error {
+	// Nothing to clean up for Dify client
+	return nil
+}
