@@ -28,12 +28,12 @@ type SessionMeta = services.SessionMeta
 
 // Forward declarations for external types
 type CardCreator interface {
-	CreateCard(ctx context.Context, content string) (*struct{ CardId string }, error)
+	CreateCard(content string) (string, error)
 }
 
 type MessageCacheInterface interface {
-	IfProcessed(msgId string) bool
-	TagProcessed(msgId string)
+	Set(key string, value interface{})
+	Get(key string) (interface{}, bool)
 }
 
 type SessionServiceCacheInterface interface {

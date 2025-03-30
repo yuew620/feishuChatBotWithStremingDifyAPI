@@ -2,15 +2,54 @@ package factory
 
 import (
 	"sync"
+	"start-feishubot/initialization"
 	"start-feishubot/services"
-	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/dify"
 )
 
+// CardCreator interface for creating cards
+type CardCreator interface {
+	CreateCard(content string) (string, error)
+}
+
+// MessageCache interface for message caching
+type MessageCache interface {
+	Set(key string, value interface{})
+	Get(key string) (interface{}, bool)
+}
+
+// cardCreatorImpl implements CardCreator
+type cardCreatorImpl struct{}
+
+func (c *cardCreatorImpl) CreateCard(content string) (string, error) {
+	return content, nil
+}
+
+// messageCacheImpl implements MessageCache
+type messageCacheImpl struct {
+	cache sync.Map
+}
+
+func (m *messageCacheImpl) Set(key string, value interface{}) {
+	m.cache.Store(key, value)
+}
+
+func (m *messageCacheImpl) Get(key string) (interface{}, bool) {
+	return m.cache.Load(key)
+}
+
+func NewCardCreator() CardCreator {
+	return &cardCreatorImpl{}
+}
+
+func NewMessageCache() MessageCache {
+	return &messageCacheImpl{}
+}
+
 var (
 	sessionCache services.SessionServiceCacheInterface
-	cardCreator  cardcreator.CardCreator
-	msgCache     services.MessageCacheInterface
+	cardCreator  CardCreator
+	msgCache     MessageCache
 	difyClient   *dify.DifyClient
 	
 	serviceOnce sync.Once
@@ -23,13 +62,13 @@ func GetSessionCache() services.SessionServiceCacheInterface {
 }
 
 // GetCardCreator returns the card creator instance
-func GetCardCreator() cardcreator.CardCreator {
+func GetCardCreator() CardCreator {
 	serviceOnce.Do(initServices)
 	return cardCreator
 }
 
 // GetMsgCache returns the message cache instance
-func GetMsgCache() services.MessageCacheInterface {
+func GetMsgCache() MessageCache {
 	serviceOnce.Do(initServices)
 	return msgCache
 }
@@ -43,7 +82,10 @@ func GetDifyClient() *dify.DifyClient {
 // initServices initializes all services
 func initServices() {
 	sessionCache = services.GetSessionCache()
-	cardCreator = cardcreator.NewCardCreator()
-	msgCache = services.NewMessageCache()
-	difyClient = dify.NewDifyClient()
+	cardCreator = NewCardCreator()
+	msgCache = NewMessageCache()
+	
+	config := initialization.GetConfig()
+	difyConfig := dify.NewConfigAdapter(config)
+	difyClient = dify.NewDifyClient(difyConfig)
 }
