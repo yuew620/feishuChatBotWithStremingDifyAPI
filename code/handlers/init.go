@@ -4,6 +4,7 @@ import (
 	"context"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
+	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/cardservice"
 	"start-feishubot/services/factory"
 )
@@ -19,7 +20,7 @@ func InitHandlers(cfg *initialization.Config) error {
 
 	// 初始化卡片池
 	cardservice.InitCardPool(func(ctx context.Context) (string, error) {
-		return CreateCardEntity(ctx, "")
+		return cardcreator.CreateCardEntity(ctx, "")
 	})
 
 	// 创建消息处理器

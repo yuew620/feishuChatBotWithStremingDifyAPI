@@ -1,10 +1,12 @@
 package factory
 
 import (
+	"context"
 	"sync"
 	"start-feishubot/initialization"
 	"start-feishubot/services"
 	"start-feishubot/services/dify"
+	"start-feishubot/services/cardcreator"
 )
 
 // CardCreator interface for creating cards
@@ -22,7 +24,9 @@ type MessageCache interface {
 type cardCreatorImpl struct{}
 
 func (c *cardCreatorImpl) CreateCard(content string) (string, error) {
-	return content, nil
+	// Use background context since we don't have a context here
+	ctx := context.Background()
+	return cardcreator.CreateCardEntity(ctx, content)
 }
 
 // messageCacheImpl implements MessageCache
