@@ -6,8 +6,6 @@ type Config struct {
 	AppSecret           string
 	VerificationToken   string
 	EncryptKey          string
-	OpenaiApiKeys       []string
-	OpenaiModel         string
 	HttpPort           string
 	FeishuAppID        string
 	FeishuAppSecret    string

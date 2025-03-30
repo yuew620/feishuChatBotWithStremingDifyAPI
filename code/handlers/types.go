@@ -8,7 +8,7 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/services/ai"
-	"start-feishubot/services/openai"
+	"start-feishubot/services/dify"
 	"start-feishubot/services"
 )
 
@@ -48,7 +48,7 @@ type SessionServiceCacheInterface interface {
 	GetStats() SessionStats
 	SetPicResolution(sessionId string, resolution string)
 	GetPicResolution(sessionId string) string
-	SetMsg(sessionId string, msg []openai.Messages)
+	SetMsg(sessionId string, msg []ai.Message)
 	GetSessionMeta(sessionId string) (*SessionMeta, bool)
 	IsDuplicateMessage(userId string, messageId string) bool
 	GetCardID(sessionId string, userId string, messageId string) (string, error)
@@ -139,7 +139,7 @@ type MessageHandler struct {
 	sessionCache SessionServiceCacheInterface
 	cardCreator  CardCreator
 	msgCache     MessageCacheInterface
-	gpt         *openai.ChatGPT
+	dify        *dify.DifyClient
 }
 
 // MessageHandlerInterface defines the interface for message handlers

@@ -9,7 +9,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"start-feishubot/initialization"
 	"start-feishubot/services/loadbalancer"
 	"strings"
 	"time"
@@ -186,7 +185,7 @@ func (gpt *ChatGPT) sendRequestWithBodyType(link, method string,
 
 func GetProxyClient(proxyString string) (*http.Client, error) {
 	var client *http.Client
-	timeOutDuration := time.Duration(initialization.GetConfig().OpenAIHttpClientTimeOut) * time.Second
+	timeOutDuration := time.Duration(GetConfig().OpenAIHttpClientTimeOut) * time.Second
 	if proxyString == "" {
 		client = &http.Client{Timeout: timeOutDuration}
 	} else {
@@ -205,7 +204,12 @@ func GetProxyClient(proxyString string) (*http.Client, error) {
 	return client, nil
 }
 
-func NewChatGPT(config initialization.Config) *ChatGPT {
+func NewChatGPT() *ChatGPT {
+	config := GetConfig()
+	if config == nil {
+		return nil
+	}
+
 	var lb *loadbalancer.LoadBalancer
 	if config.AzureOn {
 		keys := []string{config.AzureOpenaiToken}

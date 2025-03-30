@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"sort"
 	"start-feishubot/services/ai"
-	"start-feishubot/services/openai"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,7 +48,7 @@ type SessionMeta struct {
 	MessageNum int         `json:"message_num"` 
 	Size       int64       `json:"size"`        // 会话大小（字节）
 	PicResolution string    `json:"pic_resolution,omitempty"` // 图片分辨率设置
-	SystemMsg []openai.Messages `json:"system_msg,omitempty"` // 系统消息
+	SystemMsg []ai.Message `json:"system_msg,omitempty"` // 系统消息
 	CardId     string      `json:"card_id,omitempty"`     // 卡片ID
 	MessageId  string      `json:"message_id,omitempty"`  // 消息ID
 	ConversationID string  `json:"conversation_id,omitempty"` // Dify对话ID
@@ -94,7 +93,7 @@ type SessionServiceCacheInterface interface {
 	GetStats() SessionStats
 	SetPicResolution(sessionId string, resolution string)
 	GetPicResolution(sessionId string) string
-	SetMsg(sessionId string, msg []openai.Messages)
+	SetMsg(sessionId string, msg []ai.Message)
 	GetSessionMeta(sessionId string) (*SessionMeta, bool)
 	IsDuplicateMessage(userId string, messageId string) bool
 	GetCardID(sessionId string, userId string, messageId string) (string, error)
@@ -440,7 +439,7 @@ func (s *SessionService) periodicCleanup() {
 }
 
 // SetMsg 设置系统消息
-func (s *SessionService) SetMsg(sessionId string, msg []openai.Messages) {
+func (s *SessionService) SetMsg(sessionId string, msg []ai.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -4,14 +4,14 @@ import (
 	"sync"
 	"start-feishubot/services"
 	"start-feishubot/services/cardcreator"
-	"start-feishubot/services/openai"
+	"start-feishubot/services/dify"
 )
 
 var (
 	sessionCache services.SessionServiceCacheInterface
 	cardCreator  cardcreator.CardCreator
 	msgCache     services.MessageCacheInterface
-	openAIService *openai.ChatGPT
+	difyClient   *dify.DifyClient
 	
 	serviceOnce sync.Once
 )
@@ -34,10 +34,10 @@ func GetMsgCache() services.MessageCacheInterface {
 	return msgCache
 }
 
-// GetOpenAIService returns the OpenAI service instance
-func GetOpenAIService() *openai.ChatGPT {
+// GetDifyClient returns the Dify client instance
+func GetDifyClient() *dify.DifyClient {
 	serviceOnce.Do(initServices)
-	return openAIService
+	return difyClient
 }
 
 // initServices initializes all services
@@ -45,5 +45,5 @@ func initServices() {
 	sessionCache = services.GetSessionCache()
 	cardCreator = cardcreator.NewCardCreator()
 	msgCache = services.NewMessageCache()
-	openAIService = openai.NewChatGPT()
+	difyClient = dify.NewDifyClient()
 }

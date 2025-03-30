@@ -18,10 +18,8 @@ type Config struct {
 	// Additional initialization-specific fields
 	Initialized                        bool
 	EnableLog                          bool
-	AIProviderType                     string
 	AIApiUrl                           string
 	AIApiKey                           string
-	AIModel                            string
 	AITimeout                          int
 	AIMaxRetries                       int
 	FeishuBotName                      string
@@ -29,14 +27,7 @@ type Config struct {
 	UseHttps                           bool
 	CertFile                           string
 	KeyFile                            string
-	HttpProxy                          string
-	AzureOn                            bool
-	AzureApiVersion                    string
-	AzureDeploymentName                string
-	AzureResourceName                  string
-	AzureOpenaiToken                   string
 	AccessControlMaxCountPerUserPerDay int
-	OpenAIHttpClientTimeOut            int
 }
 
 var (
@@ -78,8 +69,6 @@ func LoadConfig(cfg string) *Config {
 			AppSecret:         getViperStringValue("APP_SECRET", ""),
 			VerificationToken: getViperStringValue("APP_VERIFICATION_TOKEN", ""),
 			EncryptKey:        getViperStringValue("APP_ENCRYPT_KEY", ""),
-			OpenaiApiKeys:     getViperStringArray("OPENAI_KEY", nil),
-			OpenaiModel:       getViperStringValue("OPENAI_MODEL", "gpt-3.5-turbo"),
 			HttpPort:          getViperStringValue("HTTP_PORT", "9000"),
 			FeishuAppID:      getViperStringValue("APP_ID", ""),
 			FeishuAppSecret:  getViperStringValue("APP_SECRET", ""),
@@ -92,20 +81,11 @@ func LoadConfig(cfg string) *Config {
 		UseHttps:                           getViperBoolValue("USE_HTTPS", false),
 		CertFile:                           getViperStringValue("CERT_FILE", "cert.pem"),
 		KeyFile:                            getViperStringValue("KEY_FILE", "key.pem"),
-		HttpProxy:                          getViperStringValue("HTTP_PROXY", ""),
-		AzureOn:                            getViperBoolValue("AZURE_ON", false),
-		AzureApiVersion:                    getViperStringValue("AZURE_API_VERSION", "2023-03-15-preview"),
-		AzureDeploymentName:                getViperStringValue("AZURE_DEPLOYMENT_NAME", ""),
-		AzureResourceName:                  getViperStringValue("AZURE_RESOURCE_NAME", ""),
-		AzureOpenaiToken:                   getViperStringValue("AZURE_OPENAI_TOKEN", ""),
 		AccessControlMaxCountPerUserPerDay: getViperIntValue("ACCESS_CONTROL_MAX_COUNT_PER_USER_PER_DAY", 0),
-		OpenAIHttpClientTimeOut:            getViperIntValue("OPENAI_HTTP_CLIENT_TIMEOUT", 550),
 		
 		// AI Provider配置
-		AIProviderType:                     getViperStringValue("AI_PROVIDER_TYPE", "dify"),
 		AIApiUrl:                           getViperStringValue("AI_API_URL", ""),
 		AIApiKey:                           getViperStringValue("AI_API_KEY", ""),
-		AIModel:                            getViperStringValue("AI_MODEL", ""),
 		AITimeout:                          getViperIntValue("AI_TIMEOUT", 30),
 		AIMaxRetries:                       getViperIntValue("AI_MAX_RETRIES", 3),
 	}
@@ -119,17 +99,6 @@ func getViperStringValue(key string, defaultValue string) string {
 		return defaultValue
 	}
 	return value
-}
-
-// OPENAI_KEY: sk-xxx,sk-xxx,sk-xxx
-// result:[sk-xxx sk-xxx sk-xxx]
-func getViperStringArray(key string, defaultValue []string) []string {
-	value := viper.GetString(key)
-	if value == "" {
-		return defaultValue
-	}
-	raw := strings.Split(value, ",")
-	return filterFormatKey(raw)
 }
 
 func getViperIntValue(key string, defaultValue int) int {
@@ -178,16 +147,4 @@ func (config *Config) GetKeyFile() string {
 		return "key.pem"
 	}
 	return config.KeyFile
-}
-
-// 过滤出 "sk-" 开头的 key
-func filterFormatKey(keys []string) []string {
-	var result []string
-	for _, key := range keys {
-		if strings.HasPrefix(key, "sk-") {
-			result = append(result, key)
-		}
-	}
-	return result
-
 }

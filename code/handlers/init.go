@@ -35,9 +35,9 @@ func InitHandlers(cfg *initialization.Config) error {
 	sessionCache := factory.GetSessionCache()
 	cardCreator := factory.GetCardCreator()
 	msgCache := factory.GetMsgCache()
-	gpt := factory.GetOpenAIService()
+	difyClient := initialization.GetDifyClient()
 	
-	h := NewMessageHandler(sessionCache, cardCreator, msgCache, gpt)
+	h := NewMessageHandler(sessionCache, cardCreator, msgCache, difyClient)
 	handler = h
 	return nil
 }

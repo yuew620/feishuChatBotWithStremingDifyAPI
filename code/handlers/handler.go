@@ -9,16 +9,16 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services"
-	"start-feishubot/services/openai"
+	"start-feishubot/services/dify"
 )
 
 // NewMessageHandler creates a new MessageHandler instance
-func NewMessageHandler(sessionCache SessionServiceCacheInterface, cardCreator CardCreator, msgCache MessageCacheInterface, gpt *openai.ChatGPT) *MessageHandler {
+func NewMessageHandler(sessionCache SessionServiceCacheInterface, cardCreator CardCreator, msgCache MessageCacheInterface, dify *dify.DifyClient) *MessageHandler {
 	return &MessageHandler{
 		sessionCache: sessionCache,
 		cardCreator:  cardCreator,
 		msgCache:     msgCache,
-		gpt:         gpt,
+		dify:        dify,
 	}
 }
 
