@@ -3,6 +3,7 @@ package cardcreator
 import (
 	"context"
 	"start-feishubot/services/feishu"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 // CardCreator implements core.CardCreator interface
@@ -21,9 +22,16 @@ func NewCardCreator(config *feishu.ConfigAdapter) *CardCreator {
 func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (string, error) {
 	// Use Feishu API to create card entity
 	client := c.config.GetLarkClient()
-	resp, err := client.Im.CreateMessage(ctx, content)
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType("chat_id").
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			MsgType("interactive").
+			Content(content).
+			Build()).
+		Build()
+	resp, err := client.Im.Message.Create(ctx, req)
 	if err != nil {
 		return "", err
 	}
-	return resp.MessageId, nil
+	return resp.Data.MessageId, nil
 }
