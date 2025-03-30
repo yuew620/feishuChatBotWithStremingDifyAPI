@@ -1,32 +1,18 @@
 package factory
 
 import (
-	"context"
 	"sync"
 	"start-feishubot/initialization"
 	"start-feishubot/services"
 	"start-feishubot/services/dify"
 	"start-feishubot/services/cardcreator"
+	"start-feishubot/services/feishu"
 )
-
-// CardCreator interface for creating cards
-type CardCreator interface {
-	CreateCard(content string) (string, error)
-}
 
 // MessageCache interface for message caching
 type MessageCache interface {
 	Set(key string, value interface{})
 	Get(key string) (interface{}, bool)
-}
-
-// cardCreatorImpl implements CardCreator
-type cardCreatorImpl struct{}
-
-func (c *cardCreatorImpl) CreateCard(content string) (string, error) {
-	// Use background context since we don't have a context here
-	ctx := context.Background()
-	return cardcreator.CreateCardEntity(ctx, content)
 }
 
 // messageCacheImpl implements MessageCache
@@ -42,17 +28,13 @@ func (m *messageCacheImpl) Get(key string) (interface{}, bool) {
 	return m.cache.Load(key)
 }
 
-func NewCardCreator() CardCreator {
-	return &cardCreatorImpl{}
-}
-
 func NewMessageCache() MessageCache {
 	return &messageCacheImpl{}
 }
 
 var (
 	sessionCache services.SessionServiceCacheInterface
-	cardCreator  CardCreator
+	cardCreator  *cardcreator.CardCreator
 	msgCache     MessageCache
 	difyClient   *dify.DifyClient
 	
@@ -66,7 +48,7 @@ func GetSessionCache() services.SessionServiceCacheInterface {
 }
 
 // GetCardCreator returns the card creator instance
-func GetCardCreator() CardCreator {
+func GetCardCreator() *cardcreator.CardCreator {
 	serviceOnce.Do(initServices)
 	return cardCreator
 }
@@ -86,10 +68,12 @@ func GetDifyClient() *dify.DifyClient {
 // initServices initializes all services
 func initServices() {
 	sessionCache = services.GetSessionCache()
-	cardCreator = NewCardCreator()
 	msgCache = NewMessageCache()
 	
 	config := initialization.GetConfig()
+	feishuConfig := feishu.NewConfigAdapter(config)
+	cardCreator = cardcreator.NewCardCreator(feishuConfig)
+	
 	difyConfig := dify.NewConfigAdapter(config)
 	difyClient = dify.NewDifyClient(difyConfig)
 }

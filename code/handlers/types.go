@@ -28,7 +28,7 @@ type SessionMeta = services.SessionMeta
 
 // Forward declarations for external types
 type CardCreator interface {
-	CreateCard(content string) (string, error)
+	CreateCardEntity(ctx context.Context, content string) (string, error)
 }
 
 type MessageCacheInterface interface {

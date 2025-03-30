@@ -20,7 +20,8 @@ func InitHandlers(cfg *initialization.Config) error {
 
 	// 初始化卡片池
 	cardservice.InitCardPool(func(ctx context.Context) (string, error) {
-		return cardcreator.CreateCardEntity(ctx, "")
+		creator := factory.GetCardCreator()
+		return creator.CreateCardEntity(ctx, "")
 	})
 
 	// 创建消息处理器

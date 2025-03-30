@@ -8,18 +8,35 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"start-feishubot/initialization"
+	"start-feishubot/services/feishu"
 	"time"
 )
 
+// Config defines the interface for card creator configuration
+type Config interface {
+	feishu.Config
+}
+
+// CardCreator handles card creation
+type CardCreator struct {
+	config Config
+}
+
+// NewCardCreator creates a new CardCreator instance
+func NewCardCreator(config Config) *CardCreator {
+	return &CardCreator{
+		config: config,
+	}
+}
+
 // CreateCardEntity 创建飞书卡片实体
-func CreateCardEntity(ctx context.Context, content string) (string, error) {
+func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (string, error) {
 	startTime := time.Now()
 	log.Printf("[Timing] Starting card entity creation")
 	
 	// 获取tenant_access_token
 	tokenStart := time.Now()
-	token, err := getTenantAccessToken(ctx)
+	token, err := feishu.GetTenantAccessToken(ctx, c.config)
 	if err != nil {
 		return "", fmt.Errorf("failed to get tenant_access_token: %w", err)
 	}
@@ -127,60 +144,4 @@ func CreateCardEntity(ctx context.Context, content string) (string, error) {
 	log.Printf("Successfully created card entity with ID: %s", result.Data.CardID)
 	log.Printf("[Timing] Total card entity creation took: %v ms", time.Since(startTime).Milliseconds())
 	return result.Data.CardID, nil
-}
-
-// getTenantAccessToken 获取tenant_access_token
-func getTenantAccessToken(ctx context.Context) (string, error) {
-	config := initialization.GetConfig()
-	
-	// 构建请求体
-	reqBody := map[string]string{
-		"app_id":     config.FeishuAppID,
-		"app_secret": config.FeishuAppSecret,
-	}
-	
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		"https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-		bytes.NewReader(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	// 发送请求
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API error: status=%d, body=%s", resp.StatusCode, string(body))
-	}
-
-	// 解析响应
-	var result struct {
-		Code              int    `json:"code"`
-		Msg              string `json:"msg"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-	
-	if result.Code != 0 {
-		return "", fmt.Errorf("API error: code=%d, msg=%s", result.Code, result.Msg)
-	}
-
-	return result.TenantAccessToken, nil
 }
