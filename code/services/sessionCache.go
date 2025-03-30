@@ -7,19 +7,12 @@ import (
 	"runtime"
 	"sort"
 	"start-feishubot/services/ai"
+	"start-feishubot/services/core"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/patrickmn/go-cache"
-)
-
-type SessionMode string
-
-const (
-	ModePicCreate SessionMode = "pic_create"
-	ModePicVary   SessionMode = "pic_vary"
-	ModeGPT       SessionMode = "gpt"
 )
 
 // 缓存配置常量
@@ -39,22 +32,6 @@ const (
 	MemoryThresholdWarn    = MemoryLimit * 8 / 10 // 80%触发警告
 )
 
-// SessionMeta 会话元数据
-type SessionMeta struct {
-	Mode       SessionMode  `json:"mode"`
-	Messages   []ai.Message `json:"messages,omitempty"`
-	UserId     string      `json:"user_id"`     
-	UpdatedAt  time.Time   `json:"updated_at"`  
-	MessageNum int         `json:"message_num"` 
-	Size       int64       `json:"size"`        // 会话大小（字节）
-	PicResolution string    `json:"pic_resolution,omitempty"` // 图片分辨率设置
-	SystemMsg []ai.Message `json:"system_msg,omitempty"` // 系统消息
-	CardId     string      `json:"card_id,omitempty"`     // 卡片ID
-	MessageId  string      `json:"message_id,omitempty"`  // 消息ID
-	ConversationID string  `json:"conversation_id,omitempty"` // Dify对话ID
-	CacheAddress string    `json:"cache_address,omitempty"`   // 消息缓存地址
-}
-
 // SessionService 会话服务
 type SessionService struct {
 	cache *cache.Cache
@@ -64,40 +41,10 @@ type SessionService struct {
 	totalSessions   int32          // 总会话数
 	totalMemoryUsed int64          // 总内存使用
 	userSessionCount map[string]int // 用户会话计数
-	stats           *SessionStats   // 会话统计
+	stats           *core.SessionStats   // 会话统计
 
-	// 新增: 用户消息索引
-	userMessageIndex map[string]map[string]*SessionMeta // map[userId]map[messageId]*SessionMeta
-}
-
-// SessionStats 会话统计
-type SessionStats struct {
-	TotalSessions      int32     `json:"total_sessions"`
-	TotalMemoryUsedMB  float64   `json:"total_memory_used_mb"`
-	ActiveUsers        int       `json:"active_users"`
-	AvgSessionSize     float64   `json:"avg_session_size"`
-	LastCleanupTime    time.Time `json:"last_cleanup_time"`
-	CleanedSessions    int       `json:"cleaned_sessions"`
-}
-
-// SessionServiceCacheInterface 会话服务接口
-type SessionServiceCacheInterface interface {
-	GetMessages(sessionId string) []ai.Message
-	SetMessages(sessionId string, userId string, messages []ai.Message, cardId string, messageId string, conversationID string, cacheAddress string) error
-	GetMode(sessionId string) SessionMode
-	SetMode(sessionId string, mode SessionMode)
-	Clear(sessionId string)
-	ClearUserSessions(userId string)
-	GetUserSessions(userId string) []string
-	CleanExpiredSessions() int
-	GetStats() SessionStats
-	SetPicResolution(sessionId string, resolution string)
-	GetPicResolution(sessionId string) string
-	SetMsg(sessionId string, msg []ai.Message)
-	GetSessionMeta(sessionId string) (*SessionMeta, bool)
-	IsDuplicateMessage(userId string, messageId string) bool
-	GetCardID(sessionId string, userId string, messageId string) (string, error)
-	GetSessionInfo(userId string, messageId string) (*SessionMeta, error)
+	// 用户消息索引
+	userMessageIndex map[string]map[string]*core.SessionMeta // map[userId]map[messageId]*SessionMeta
 }
 
 var (
@@ -106,13 +53,13 @@ var (
 )
 
 // GetSessionCache 获取会话缓存单例
-func GetSessionCache() SessionServiceCacheInterface {
+func GetSessionCache() core.SessionCache {
 	once.Do(func() {
 		sessionServices = &SessionService{
 			cache:            cache.New(DefaultExpiration, CleanupInterval),
 			userSessionCount: make(map[string]int),
-			stats:           &SessionStats{},
-			userMessageIndex: make(map[string]map[string]*SessionMeta),
+			stats:           &core.SessionStats{},
+			userMessageIndex: make(map[string]map[string]*core.SessionMeta),
 		}
 		
 		// 启动定期清理
@@ -125,33 +72,33 @@ func GetSessionCache() SessionServiceCacheInterface {
 }
 
 // GetMode 获取会话模式
-func (s *SessionService) GetMode(sessionId string) SessionMode {
+func (s *SessionService) GetMode(sessionId string) core.SessionMode {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	sessionContext, ok := s.cache.Get(sessionId)
 	if !ok {
-		return ModeGPT
+		return core.ModeGPT
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	return sessionMeta.Mode
 }
 
 // SetMode 设置会话模式
-func (s *SessionService) SetMode(sessionId string, mode SessionMode) {
+func (s *SessionService) SetMode(sessionId string, mode core.SessionMode) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	sessionContext, ok := s.cache.Get(sessionId)
 	if !ok {
-		sessionMeta := &SessionMeta{
+		sessionMeta := &core.SessionMeta{
 			Mode:      mode,
 			UpdatedAt: time.Now(),
 		}
 		s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
 		return
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	sessionMeta.Mode = mode
 	sessionMeta.UpdatedAt = time.Now()
 	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
@@ -166,7 +113,7 @@ func (s *SessionService) GetMessages(sessionId string) []ai.Message {
 	if !ok {
 		return nil
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	
 	// 复制消息并添加session_id到元数据
 	messages := make([]ai.Message, len(sessionMeta.Messages))
@@ -227,7 +174,7 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 	}
 
 	sessionContext, exists := s.cache.Get(sessionId)
-	var sessionMeta *SessionMeta
+	var sessionMeta *core.SessionMeta
 	if !exists {
 		// 检查总会话数限制
 		if atomic.LoadInt32(&s.totalSessions) >= int32(MaxTotalSessions) {
@@ -237,7 +184,7 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 			}
 		}
 		
-		sessionMeta = &SessionMeta{
+		sessionMeta = &core.SessionMeta{
 			Messages:       messages,
 			UserId:         userId,
 			UpdatedAt:      time.Now(),
@@ -251,7 +198,7 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 		atomic.AddInt32(&s.totalSessions, 1)
 		s.userSessionCount[userId]++
 	} else {
-		sessionMeta = sessionContext.(*SessionMeta)
+		sessionMeta = sessionContext.(*core.SessionMeta)
 		atomic.AddInt64(&s.totalMemoryUsed, -sessionMeta.Size) // 减去旧大小
 		sessionMeta.Messages = messages
 		sessionMeta.UpdatedAt = time.Now()
@@ -268,7 +215,7 @@ func (s *SessionService) SetMessages(sessionId string, userId string, messages [
 
 	// 更新用户消息索引
 	if _, ok := s.userMessageIndex[userId]; !ok {
-		s.userMessageIndex[userId] = make(map[string]*SessionMeta)
+		s.userMessageIndex[userId] = make(map[string]*core.SessionMeta)
 	}
 	s.userMessageIndex[userId][messageId] = sessionMeta
 
@@ -281,7 +228,7 @@ func (s *SessionService) Clear(sessionId string) {
 	defer s.mu.Unlock()
 
 	if item, exists := s.cache.Get(sessionId); exists {
-		meta := item.(*SessionMeta)
+		meta := item.(*core.SessionMeta)
 		atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
 		atomic.AddInt32(&s.totalSessions, -1)
 		s.userSessionCount[meta.UserId]--
@@ -307,7 +254,7 @@ func (s *SessionService) ClearUserSessions(userId string) {
 
 	items := s.cache.Items()
 	for sessionId, item := range items {
-		if meta, ok := item.Object.(*SessionMeta); ok && meta.UserId == userId {
+		if meta, ok := item.Object.(*core.SessionMeta); ok && meta.UserId == userId {
 			atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
 			atomic.AddInt32(&s.totalSessions, -1)
 			s.cache.Delete(sessionId)
@@ -324,7 +271,7 @@ func (s *SessionService) GetUserSessions(userId string) []string {
 	var sessions []string
 	items := s.cache.Items()
 	for sessionId, item := range items {
-		if meta, ok := item.Object.(*SessionMeta); ok && meta.UserId == userId {
+		if meta, ok := item.Object.(*core.SessionMeta); ok && meta.UserId == userId {
 			sessions = append(sessions, sessionId)
 		}
 	}
@@ -340,7 +287,7 @@ func (s *SessionService) CleanExpiredSessions() int {
 	expiredTime := time.Now().Add(-DefaultExpiration)
 	items := s.cache.Items()
 	for sessionId, item := range items {
-		if meta, ok := item.Object.(*SessionMeta); ok {
+		if meta, ok := item.Object.(*core.SessionMeta); ok {
 			if meta.UpdatedAt.Before(expiredTime) {
 				atomic.AddInt64(&s.totalMemoryUsed, -meta.Size)
 				atomic.AddInt32(&s.totalSessions, -1)
@@ -360,7 +307,7 @@ func (s *SessionService) CleanExpiredSessions() int {
 }
 
 // GetStats 获取统计信息
-func (s *SessionService) GetStats() SessionStats {
+func (s *SessionService) GetStats() core.SessionStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -385,7 +332,7 @@ func (s *SessionService) cleanOldestUserSession(userId string) {
 	var oldestTime time.Time
 	items := s.cache.Items()
 	for sessionId, item := range items {
-		if meta, ok := item.Object.(*SessionMeta); ok && meta.UserId == userId {
+		if meta, ok := item.Object.(*core.SessionMeta); ok && meta.UserId == userId {
 			if oldestSession == "" || meta.UpdatedAt.Before(oldestTime) {
 				oldestSession = sessionId
 				oldestTime = meta.UpdatedAt
@@ -406,14 +353,14 @@ func (s *SessionService) forceCleanup() {
 		items := s.cache.Items()
 		sessions := make([]*struct {
 			id   string
-			meta *SessionMeta
+			meta *core.SessionMeta
 		}, 0, len(items))
 		
 		for id, item := range items {
-			if meta, ok := item.Object.(*SessionMeta); ok {
+			if meta, ok := item.Object.(*core.SessionMeta); ok {
 				sessions = append(sessions, &struct {
 					id   string
-					meta *SessionMeta
+					meta *core.SessionMeta
 				}{id, meta})
 			}
 		}
@@ -445,14 +392,14 @@ func (s *SessionService) SetMsg(sessionId string, msg []ai.Message) {
 
 	sessionContext, ok := s.cache.Get(sessionId)
 	if !ok {
-		sessionMeta := &SessionMeta{
+		sessionMeta := &core.SessionMeta{
 			UpdatedAt: time.Now(),
 			SystemMsg: msg,
 		}
 		s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
 		return
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	sessionMeta.UpdatedAt = time.Now()
 	sessionMeta.SystemMsg = msg
 	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
@@ -479,14 +426,14 @@ func (s *SessionService) SetPicResolution(sessionId string, resolution string) {
 
 	sessionContext, ok := s.cache.Get(sessionId)
 	if !ok {
-		sessionMeta := &SessionMeta{
+		sessionMeta := &core.SessionMeta{
 			UpdatedAt:     time.Now(),
 			PicResolution: resolution,
 		}
 		s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
 		return
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	sessionMeta.PicResolution = resolution
 	sessionMeta.UpdatedAt = time.Now()
 	s.cache.Set(sessionId, sessionMeta, DefaultExpiration)
@@ -501,7 +448,7 @@ func (s *SessionService) GetPicResolution(sessionId string) string {
 	if !ok {
 		return "512x512" // 默认分辨率
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	if sessionMeta.PicResolution == "" {
 		return "512x512" // 默认分辨率
 	}
@@ -509,7 +456,7 @@ func (s *SessionService) GetPicResolution(sessionId string) string {
 }
 
 // GetSessionMeta 获取会话元数据
-func (s *SessionService) GetSessionMeta(sessionId string) (*SessionMeta, bool) {
+func (s *SessionService) GetSessionMeta(sessionId string) (*core.SessionMeta, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -517,7 +464,7 @@ func (s *SessionService) GetSessionMeta(sessionId string) (*SessionMeta, bool) {
 	if !ok {
 		return nil, false
 	}
-	sessionMeta := sessionContext.(*SessionMeta)
+	sessionMeta := sessionContext.(*core.SessionMeta)
 	return sessionMeta, true
 }
 
@@ -538,7 +485,7 @@ func (s *SessionService) isDuplicateMessageUnsafe(userId string, messageId strin
 }
 
 // GetSessionInfo 获取会话信息
-func (s *SessionService) GetSessionInfo(userId string, messageId string) (*SessionMeta, error) {
+func (s *SessionService) GetSessionInfo(userId string, messageId string) (*core.SessionMeta, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -552,7 +499,7 @@ func (s *SessionService) GetSessionInfo(userId string, messageId string) (*Sessi
 	// 如果在用户消息索引中找不到，遍历所有会话查找
 	items := s.cache.Items()
 	for _, item := range items {
-		if sessionMeta, ok := item.Object.(*SessionMeta); ok {
+		if sessionMeta, ok := item.Object.(*core.SessionMeta); ok {
 			if sessionMeta.UserId == userId && sessionMeta.MessageId == messageId {
 				return sessionMeta, nil
 			}

@@ -1,168 +1,89 @@
 package initialization
 
 import (
-	"fmt"
-	"github.com/spf13/pflag"
+	"encoding/json"
+	"io/ioutil"
+	"log"
 	"os"
-	"strconv"
-	"strings"
-	"sync"
-
-	"github.com/spf13/viper"
-	baseconfig "start-feishubot/config"
+	"path/filepath"
 	"start-feishubot/services/config"
 )
 
-// Config extends the base config with initialization-specific fields
-type Config struct {
-	baseconfig.Config
-	// Additional initialization-specific fields
-	Initialized                        bool
-	EnableLog                          bool
-	AIProviderType                     string
-	AIApiUrl                           string
-	AIApiKey                           string
-	AIModel                            string
-	AITimeout                          int
-	AIMaxRetries                       int
-	FeishuBotName                      string
-	HttpsPort                          int
-	UseHttps                           bool
-	CertFile                           string
-	KeyFile                            string
+// ConfigImpl implements the Config interface
+type ConfigImpl struct {
+	FeishuAppID     string `json:"feishu_app_id"`
+	FeishuAppSecret string `json:"feishu_app_secret"`
+	DifyAPIEndpoint string `json:"dify_api_endpoint"`
+	DifyAPIKey      string `json:"dify_api_key"`
+	HttpPort        string `json:"http_port"`
+	Initialized     bool   `json:"-"`
 }
 
-// Implement config.FeishuConfig
-func (c *Config) GetFeishuAppID() string {
+var globalConfig *ConfigImpl
+
+// GetConfig returns the global configuration instance
+func GetConfig() config.Config {
+	if globalConfig == nil {
+		globalConfig = &ConfigImpl{}
+		if err := loadConfig(); err != nil {
+			log.Printf("Failed to load config: %v", err)
+			return globalConfig
+		}
+		globalConfig.Initialized = true
+	}
+	return globalConfig
+}
+
+// loadConfig loads configuration from file
+func loadConfig() error {
+	// Try to load from config.yaml first
+	configPath := filepath.Join("config.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		data, err := ioutil.ReadFile(configPath)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, globalConfig); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// If config.yaml doesn't exist, try environment variables
+	globalConfig.FeishuAppID = os.Getenv("FEISHU_APP_ID")
+	globalConfig.FeishuAppSecret = os.Getenv("FEISHU_APP_SECRET")
+	globalConfig.DifyAPIEndpoint = os.Getenv("DIFY_API_ENDPOINT")
+	globalConfig.DifyAPIKey = os.Getenv("DIFY_API_KEY")
+	globalConfig.HttpPort = os.Getenv("HTTP_PORT")
+	if globalConfig.HttpPort == "" {
+		globalConfig.HttpPort = "8080"
+	}
+
+	return nil
+}
+
+// Implementation of Config interface
+
+func (c *ConfigImpl) GetFeishuAppID() string {
 	return c.FeishuAppID
 }
 
-func (c *Config) GetFeishuAppSecret() string {
+func (c *ConfigImpl) GetFeishuAppSecret() string {
 	return c.FeishuAppSecret
 }
 
-// Implement config.DifyConfig
-func (c *Config) GetDifyApiUrl() string {
-	return c.AIApiUrl
+func (c *ConfigImpl) GetDifyAPIEndpoint() string {
+	return c.DifyAPIEndpoint
 }
 
-func (c *Config) GetDifyApiKey() string {
-	return c.AIApiKey
+func (c *ConfigImpl) GetDifyAPIKey() string {
+	return c.DifyAPIKey
 }
 
-var (
-	cfgPath = pflag.StringP("config", "c", "./config.yaml", "apiserver config file path.")
-	configInstance *Config
-	once   sync.Once
-)
-
-/*
-GetConfig will call LoadConfig once and return a global singleton, you should always use this function to get config
-*/
-func GetConfig() *Config {
-	once.Do(func() {
-		configInstance = LoadConfig(*cfgPath)
-		configInstance.Initialized = true
-	})
-
-	return configInstance
+func (c *ConfigImpl) GetHttpPort() string {
+	return c.HttpPort
 }
 
-/*
-LoadConfig will load config and should only be called once, you should always use GetConfig to get config rather than
-call this function directly
-*/
-func LoadConfig(cfgPath string) *Config {
-	viper.SetConfigFile(cfgPath)
-	viper.ReadInConfig()
-	viper.AutomaticEnv()
-	//content, err := ioutil.ReadFile("config.yaml")
-	//if err != nil {
-	//	fmt.Println("Error reading file:", err)
-	//}
-	//fmt.Println(string(content))
-
-	configObj := &Config{
-		Config: baseconfig.Config{
-			AppID:              getViperStringValue("APP_ID", ""),
-			AppSecret:         getViperStringValue("APP_SECRET", ""),
-			VerificationToken: getViperStringValue("APP_VERIFICATION_TOKEN", ""),
-			EncryptKey:        getViperStringValue("APP_ENCRYPT_KEY", ""),
-			HttpPort:          getViperStringValue("HTTP_PORT", "9000"),
-			FeishuAppID:      getViperStringValue("APP_ID", ""),
-			FeishuAppSecret:  getViperStringValue("APP_SECRET", ""),
-		},
-		EnableLog:                          getViperBoolValue("ENABLE_LOG", false),
-		FeishuBotName:                      getViperStringValue("BOT_NAME", ""),
-		HttpsPort:                          getViperIntValue("HTTPS_PORT", 9001),
-		UseHttps:                           getViperBoolValue("USE_HTTPS", false),
-		CertFile:                           getViperStringValue("CERT_FILE", "cert.pem"),
-		KeyFile:                            getViperStringValue("KEY_FILE", "key.pem"),
-		
-		// AI Provider配置
-		AIProviderType:                     getViperStringValue("AI_PROVIDER_TYPE", "dify"),
-		AIApiUrl:                           getViperStringValue("AI_API_URL", ""),
-		AIApiKey:                           getViperStringValue("AI_API_KEY", ""),
-		AIModel:                            getViperStringValue("AI_MODEL", "gpt-3.5-turbo"),
-		AITimeout:                          getViperIntValue("AI_TIMEOUT", 30),
-		AIMaxRetries:                       getViperIntValue("AI_MAX_RETRIES", 3),
-	}
-
-	return configObj
-}
-
-func getViperStringValue(key string, defaultValue string) string {
-	value := viper.GetString(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value
-}
-
-func getViperIntValue(key string, defaultValue int) int {
-	value := viper.GetString(key)
-	if value == "" {
-		return defaultValue
-	}
-	intValue, err := strconv.Atoi(value)
-	if err != nil {
-		fmt.Printf("Invalid value for %s, using default value %d\n", key, defaultValue)
-		return defaultValue
-	}
-	return intValue
-}
-
-func getViperBoolValue(key string, defaultValue bool) bool {
-	value := viper.GetString(key)
-	if value == "" {
-		return defaultValue
-	}
-	boolValue, err := strconv.ParseBool(value)
-	if err != nil {
-		fmt.Printf("Invalid value for %s, using default value %v\n", key, defaultValue)
-		return defaultValue
-	}
-	return boolValue
-}
-
-func (c *Config) GetCertFile() string {
-	if c.CertFile == "" {
-		return "cert.pem"
-	}
-	if _, err := os.Stat(c.CertFile); err != nil {
-		fmt.Printf("Certificate file %s does not exist, using default file cert.pem\n", c.CertFile)
-		return "cert.pem"
-	}
-	return c.CertFile
-}
-
-func (c *Config) GetKeyFile() string {
-	if c.KeyFile == "" {
-		return "key.pem"
-	}
-	if _, err := os.Stat(c.KeyFile); err != nil {
-		fmt.Printf("Key file %s does not exist, using default file key.pem\n", c.KeyFile)
-		return "key.pem"
-	}
-	return c.KeyFile
+func (c *ConfigImpl) IsInitialized() bool {
+	return c.Initialized
 }

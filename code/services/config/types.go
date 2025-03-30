@@ -1,13 +1,18 @@
 package config
 
-// FeishuConfig defines the interface for Feishu configuration
-type FeishuConfig interface {
+// Config defines the interface for configuration
+type Config interface {
+	// Feishu configuration
 	GetFeishuAppID() string
 	GetFeishuAppSecret() string
-}
 
-// DifyConfig defines the interface for Dify configuration
-type DifyConfig interface {
-	GetDifyApiUrl() string
-	GetDifyApiKey() string
+	// Dify configuration
+	GetDifyAPIEndpoint() string
+	GetDifyAPIKey() string
+
+	// HTTP configuration
+	GetHttpPort() string
+
+	// General configuration
+	IsInitialized() bool
 }

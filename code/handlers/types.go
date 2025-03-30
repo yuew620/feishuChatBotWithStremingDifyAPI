@@ -8,51 +8,22 @@ import (
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/services/ai"
-	"start-feishubot/services/dify"
-	"start-feishubot/services"
+	"start-feishubot/services/core"
 )
 
-type SessionMode = services.SessionMode
-
-// SessionStats contains session statistics
-type SessionStats struct {
-	TotalSessions      int32     `json:"total_sessions"`
-	TotalMemoryUsedMB  float64   `json:"total_memory_used_mb"`
-	ActiveUsers        int       `json:"active_users"`
-	AvgSessionSize     float64   `json:"avg_session_size"`
-	LastCleanupTime    time.Time `json:"last_cleanup_time"`
-	CleanedSessions    int       `json:"cleaned_sessions"`
+// MessageHandler defines the message handler struct
+type MessageHandler struct {
+	sessionCache core.SessionCache
+	cardCreator  core.CardCreator
+	msgCache     core.MessageCache
+	dify         core.AIProvider
 }
 
-type SessionMeta = services.SessionMeta
-
-// Forward declarations for external types
-type CardCreator interface {
-	CreateCardEntity(ctx context.Context, content string) (string, error)
-}
-
-type MessageCacheInterface interface {
-	Set(key string, value interface{})
-	Get(key string) (interface{}, bool)
-}
-
-type SessionServiceCacheInterface interface {
-	GetMessages(sessionId string) []ai.Message
-	SetMessages(sessionId string, userId string, messages []ai.Message, cardId string, messageId string, conversationID string, cacheAddress string) error
-	GetMode(sessionId string) SessionMode
-	SetMode(sessionId string, mode SessionMode)
-	Clear(sessionId string)
-	ClearUserSessions(userId string)
-	GetUserSessions(userId string) []string
-	CleanExpiredSessions() int
-	GetStats() SessionStats
-	SetPicResolution(sessionId string, resolution string)
-	GetPicResolution(sessionId string) string
-	SetMsg(sessionId string, msg []ai.Message)
-	GetSessionMeta(sessionId string) (*SessionMeta, bool)
-	IsDuplicateMessage(userId string, messageId string) bool
-	GetCardID(sessionId string, userId string, messageId string) (string, error)
-	GetSessionInfo(userId string, messageId string) (*services.SessionMeta, error)
+// MessageHandlerInterface defines the interface for message handlers
+type MessageHandlerInterface interface {
+	msgReceivedHandler(ctx context.Context, event *larkim.P2MessageReceiveV1) error
+	cardHandler(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error)
+	judgeIfMentionMe(mention []*larkim.MentionEvent) bool
 }
 
 // HandlerType defines the type of handler
@@ -132,21 +103,6 @@ type ActionInfo struct {
 // Action defines the interface for actions
 type Action interface {
 	Execute(a *ActionInfo) bool
-}
-
-// MessageHandler defines the message handler struct
-type MessageHandler struct {
-	sessionCache SessionServiceCacheInterface
-	cardCreator  CardCreator
-	msgCache     MessageCacheInterface
-	dify        *dify.DifyClient
-}
-
-// MessageHandlerInterface defines the interface for message handlers
-type MessageHandlerInterface interface {
-	msgReceivedHandler(ctx context.Context, event *larkim.P2MessageReceiveV1) error
-	cardHandler(ctx context.Context, cardAction *larkcard.CardAction) (interface{}, error)
-	judgeIfMentionMe(mention []*larkim.MentionEvent) bool
 }
 
 // UserHandler implements MessageHandlerInterface

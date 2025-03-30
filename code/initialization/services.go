@@ -1,56 +1,60 @@
 package initialization
 
 import (
-	"sync"
+	"context"
 	"start-feishubot/services"
 	"start-feishubot/services/cardcreator"
+	"start-feishubot/services/cardservice"
 	"start-feishubot/services/dify"
 	"start-feishubot/services/factory"
 	"start-feishubot/services/feishu"
 )
 
-var (
-	sessionCache services.SessionServiceCacheInterface
-	cardCreator  *cardcreator.CardCreator
-	msgCache     factory.MessageCache
-	difyClient   *dify.DifyClient
-	
-	serviceOnce sync.Once
-)
+// InitializeServices initializes all services
+func InitializeServices() error {
+	// Get service factory instance
+	serviceFactory := factory.GetInstance()
 
-// GetSessionCache returns the session cache instance
-func GetSessionCache() services.SessionServiceCacheInterface {
-	serviceOnce.Do(initServices)
-	return sessionCache
-}
+	// Initialize session cache
+	sessionCache := services.GetSessionCache()
+	serviceFactory.SetSessionCache(sessionCache)
 
-// GetCardCreator returns the card creator instance
-func GetCardCreator() *cardcreator.CardCreator {
-	serviceOnce.Do(initServices)
-	return cardCreator
-}
-
-// GetMsgCache returns the message cache instance
-func GetMsgCache() factory.MessageCache {
-	serviceOnce.Do(initServices)
-	return msgCache
-}
-
-// GetDifyClient returns the Dify client instance
-func GetDifyClient() *dify.DifyClient {
-	serviceOnce.Do(initServices)
-	return difyClient
-}
-
-// initServices initializes all services
-func initServices() {
-	sessionCache = services.GetSessionCache()
-	msgCache = factory.NewMessageCache()
-	
+	// Get configuration
 	config := GetConfig()
+
+	// Initialize Feishu services
 	feishuConfig := feishu.NewConfigAdapter(config)
-	cardCreator = cardcreator.NewCardCreator(feishuConfig)
-	
+	cardCreator := cardcreator.NewCardCreator(feishuConfig)
+	serviceFactory.SetCardCreator(cardCreator)
+
+	// Initialize card pool
+	cardservice.InitCardPool(func(ctx context.Context) (string, error) {
+		return cardCreator.CreateCardEntity(ctx, "")
+	})
+
+	// Initialize Dify services
 	difyConfig := dify.NewConfigAdapter(config)
-	difyClient = dify.NewDifyClient(difyConfig)
+	difyClient := dify.NewDifyClient(difyConfig)
+	serviceFactory.SetAIProvider(difyClient)
+
+	// Initialize AI provider
+	_, err := InitAIProvider()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ShutdownServices gracefully shuts down all services
+func ShutdownServices() error {
+	// Shutdown card pool
+	cardservice.ShutdownCardPool()
+
+	// Shutdown AI provider
+	if err := ShutdownAIProvider(); err != nil {
+		return err
+	}
+
+	return nil
 }
