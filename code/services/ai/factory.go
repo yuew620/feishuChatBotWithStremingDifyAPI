@@ -1,213 +1,114 @@
 package ai
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
-	"time"
 )
 
-// ProviderType 定义AI提供商类型
-type ProviderType string
-
-const (
-	ProviderTypeDify    ProviderType = "dify"
-	ProviderTypeOpenAI  ProviderType = "openai"
-	ProviderTypeChatGPT ProviderType = "chatgpt"
-)
-
-// ProviderConfig AI提供商配置实现
-type ProviderConfig struct {
-	providerType ProviderType
-	apiUrl       string
-	apiKey       string
-	model        string
-	timeout      time.Duration
-	maxRetries   int
-}
-
-func NewProviderConfig(providerType ProviderType, apiUrl, apiKey, model string) *ProviderConfig {
-	return &ProviderConfig{
-		providerType: providerType,
-		apiUrl:       apiUrl,
-		apiKey:       apiKey,
-		model:        model,
-		timeout:      30 * time.Second, // 默认30秒超时
-		maxRetries:   3,               // 默认最多重试3次
-	}
-}
-
-// WithTimeout 设置超时时间
-func (c *ProviderConfig) WithTimeout(timeout time.Duration) *ProviderConfig {
-	c.timeout = timeout
-	return c
-}
-
-// WithMaxRetries 设置最大重试次数
-func (c *ProviderConfig) WithMaxRetries(maxRetries int) *ProviderConfig {
-	c.maxRetries = maxRetries
-	return c
-}
-
-func (c *ProviderConfig) GetProviderType() string {
-	return string(c.providerType)
-}
-
-func (c *ProviderConfig) GetApiUrl() string {
-	return c.apiUrl
-}
-
-func (c *ProviderConfig) GetApiKey() string {
-	return c.apiKey
-}
-
-func (c *ProviderConfig) GetModel() string {
-	return c.model
-}
-
-func (c *ProviderConfig) GetTimeout() time.Duration {
-	return c.timeout
-}
-
-func (c *ProviderConfig) GetMaxRetries() int {
-	return c.maxRetries
-}
-
-// Validate 验证配置
-func (c *ProviderConfig) Validate() error {
-	if c.providerType == "" {
-		return NewError(ErrInvalidConfig, "provider type cannot be empty", nil)
-	}
-	if c.apiUrl == "" {
-		return NewError(ErrInvalidConfig, "API URL cannot be empty", nil)
-	}
-	if c.apiKey == "" {
-		return NewError(ErrInvalidConfig, "API key cannot be empty", nil)
-	}
-	if c.timeout <= 0 {
-		return NewError(ErrInvalidConfig, "timeout must be positive", nil)
-	}
-	if c.maxRetries < 0 {
-		return NewError(ErrInvalidConfig, "max retries cannot be negative", nil)
-	}
-	return nil
-}
-
-// FactoryManager 工厂管理器
-type FactoryManager struct {
-	factories map[ProviderType]Factory
-	providers map[string]Provider // 缓存已创建的Provider实例
-	mu        sync.RWMutex
-}
-
-// 全局工厂管理器实例
+// Common errors
 var (
-	factoryManager *FactoryManager
-	once          sync.Once
+	ErrInvalidConfig = NewError("invalid configuration")
 )
 
-// GetFactoryManager 获取工厂管理器单例
-func GetFactoryManager() *FactoryManager {
+// Factory manages AI providers
+type Factory struct {
+	mu       sync.RWMutex
+	config   Config
+	provider Provider
+}
+
+// Config defines the configuration for AI providers
+type Config struct {
+	Provider     string `json:"provider"`
+	APIEndpoint  string `json:"api_endpoint"`
+	APIKey       string `json:"api_key"`
+	MaxTokens    int    `json:"max_tokens"`
+	Temperature  float64 `json:"temperature"`
+	TopP        float64 `json:"top_p"`
+	StopWords   []string `json:"stop_words"`
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	if c.Provider == "" {
+		return ErrInvalidConfig
+	}
+	if c.APIEndpoint == "" {
+		return ErrInvalidConfig
+	}
+	if c.APIKey == "" {
+		return ErrInvalidConfig
+	}
+	if c.MaxTokens <= 0 {
+		return ErrInvalidConfig
+	}
+	if c.Temperature < 0 || c.Temperature > 1 {
+		return ErrInvalidConfig
+	}
+	return nil
+}
+
+var (
+	factory *Factory
+	once    sync.Once
+)
+
+// GetFactory returns the singleton factory instance
+func GetFactory() *Factory {
 	once.Do(func() {
-		factoryManager = &FactoryManager{
-			factories: make(map[ProviderType]Factory),
-			providers: make(map[string]Provider),
-		}
+		factory = &Factory{}
 	})
-	return factoryManager
+	return factory
 }
 
-// RegisterFactory 注册AI提供商工厂
-func (m *FactoryManager) RegisterFactory(providerType ProviderType, factory Factory) error {
-	if factory == nil {
-		return NewError(ErrInvalidConfig, "factory cannot be nil", nil)
+// Initialize initializes the factory with configuration
+func (f *Factory) Initialize(config Config) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %v", err)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, exists := m.factories[providerType]; exists {
-		return NewError(ErrInvalidConfig, fmt.Sprintf("factory already registered for provider type: %s", providerType), nil)
-	}
-
-	m.factories[providerType] = factory
+	f.config = config
 	return nil
 }
 
-// CreateProvider 创建AI提供商实例
-func (m *FactoryManager) CreateProvider(config Config) (Provider, error) {
-	if err := validateConfig(config); err != nil {
-		return nil, err
+// GetProvider returns the configured AI provider
+func (f *Factory) GetProvider() (Provider, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.provider != nil {
+		return f.provider, nil
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	return nil, errors.New("provider not initialized")
+}
 
-	// 检查缓存中是否已存在Provider实例
-	cacheKey := fmt.Sprintf("%s-%s", config.GetProviderType(), config.GetApiKey())
-	if provider, exists := m.providers[cacheKey]; exists {
-		return provider, nil
-	}
-
-	providerType := ProviderType(config.GetProviderType())
-	factory, ok := m.factories[providerType]
-	if !ok {
-		return nil, NewError(ErrProviderNotFound, fmt.Sprintf("no factory registered for provider type: %s", providerType), nil)
-	}
-
-	provider, err := factory.CreateProvider(config)
+// StreamChat streams chat messages using the configured provider
+func (f *Factory) StreamChat(ctx context.Context, messages []Message, responseStream chan string) error {
+	provider, err := f.GetProvider()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider: %w", err)
+		return err
 	}
 
-	// 缓存Provider实例
-	m.providers[cacheKey] = provider
-	return provider, nil
+	return provider.StreamChat(ctx, messages, responseStream)
 }
 
-// CloseAllProviders 关闭所有Provider实例
-func (m *FactoryManager) CloseAllProviders() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// Close closes the factory and its provider
+func (f *Factory) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	var errs []error
-	for _, provider := range m.providers {
-		if err := provider.Close(); err != nil {
-			errs = append(errs, err)
+	if f.provider != nil {
+		if err := f.provider.Close(); err != nil {
+			return err
 		}
+		f.provider = nil
 	}
 
-	m.providers = make(map[string]Provider)
-
-	if len(errs) > 0 {
-		return fmt.Errorf("errors closing providers: %v", errs)
-	}
-	return nil
-}
-
-func validateConfig(config Config) error {
-	if config == nil {
-		return NewError(ErrInvalidConfig, "config cannot be nil", nil)
-	}
-	
-	if config.GetProviderType() == "" {
-		return NewError(ErrInvalidConfig, "provider type cannot be empty", nil)
-	}
-	
-	if config.GetApiUrl() == "" {
-		return NewError(ErrInvalidConfig, "API URL cannot be empty", nil)
-	}
-	
-	if config.GetApiKey() == "" {
-		return NewError(ErrInvalidConfig, "API key cannot be empty", nil)
-	}
-	
-	if config.GetTimeout() <= 0 {
-		return NewError(ErrInvalidConfig, "timeout must be positive", nil)
-	}
-	
-	if config.GetMaxRetries() < 0 {
-		return NewError(ErrInvalidConfig, "max retries cannot be negative", nil)
-	}
-	
 	return nil
 }
