@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -9,7 +8,7 @@ import (
 )
 
 // GetTextContent extracts text content from message
-func GetTextContent(msg *larkim.MessageContent) (string, error) {
+func GetTextContent(msg *larkim.Message) (string, error) {
 	var textContent struct {
 		Text string `json:"text"`
 	}
@@ -21,7 +20,7 @@ func GetTextContent(msg *larkim.MessageContent) (string, error) {
 }
 
 // GetImageContent extracts image key from message
-func GetImageContent(msg *larkim.MessageContent) (string, error) {
+func GetImageContent(msg *larkim.Message) (string, error) {
 	var imageContent struct {
 		ImageKey string `json:"image_key"`
 	}
@@ -33,7 +32,7 @@ func GetImageContent(msg *larkim.MessageContent) (string, error) {
 }
 
 // GetAudioContent extracts audio key from message
-func GetAudioContent(msg *larkim.MessageContent) (string, error) {
+func GetAudioContent(msg *larkim.Message) (string, error) {
 	var audioContent struct {
 		FileKey string `json:"file_key"`
 	}
@@ -45,7 +44,7 @@ func GetAudioContent(msg *larkim.MessageContent) (string, error) {
 }
 
 // GetFileContent extracts file key from message
-func GetFileContent(msg *larkim.MessageContent) (string, error) {
+func GetFileContent(msg *larkim.Message) (string, error) {
 	var fileContent struct {
 		FileKey string `json:"file_key"`
 	}
@@ -62,7 +61,7 @@ func GetMentionedMessage(event *larkim.P2MessageReceiveV1, cfg config.Config) bo
 	if len(mentions) != 1 {
 		return false
 	}
-	return mentions[0].Name == cfg.GetFeishuAppID()
+	return *mentions[0].Name == cfg.GetFeishuAppID()
 }
 
 // GetMessageType extracts message type from event
@@ -76,8 +75,8 @@ func GetChatType(event *larkim.P2MessageReceiveV1) string {
 }
 
 // GetContent extracts content from event
-func GetContent(event *larkim.P2MessageReceiveV1) (*larkim.MessageContent, error) {
-	content := event.Event.Message.Content
+func GetContent(event *larkim.P2MessageReceiveV1) (*larkim.Message, error) {
+	content := event.Event.Message
 	if content == nil {
 		return nil, fmt.Errorf("empty message content")
 	}

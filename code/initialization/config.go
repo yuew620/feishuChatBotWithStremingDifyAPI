@@ -11,12 +11,13 @@ import (
 
 // ConfigImpl implements the Config interface
 type ConfigImpl struct {
-	FeishuAppID     string `json:"feishu_app_id"`
-	FeishuAppSecret string `json:"feishu_app_secret"`
-	DifyAPIEndpoint string `json:"dify_api_endpoint"`
-	DifyAPIKey      string `json:"dify_api_key"`
-	HttpPort        string `json:"http_port"`
-	Initialized     bool   `json:"-"`
+	FeishuAppID                 string `json:"feishu_app_id"`
+	FeishuAppSecret            string `json:"feishu_app_secret"`
+	FeishuAppVerificationToken string `json:"feishu_app_verification_token"`
+	DifyAPIEndpoint            string `json:"dify_api_endpoint"`
+	DifyAPIKey                 string `json:"dify_api_key"`
+	HttpPort                   string `json:"http_port"`
+	Initialized               bool   `json:"-"`
 }
 
 var globalConfig *ConfigImpl
@@ -52,6 +53,7 @@ func loadConfig() error {
 	// If config.yaml doesn't exist, try environment variables
 	globalConfig.FeishuAppID = os.Getenv("FEISHU_APP_ID")
 	globalConfig.FeishuAppSecret = os.Getenv("FEISHU_APP_SECRET")
+	globalConfig.FeishuAppVerificationToken = os.Getenv("FEISHU_APP_VERIFICATION_TOKEN")
 	globalConfig.DifyAPIEndpoint = os.Getenv("DIFY_API_ENDPOINT")
 	globalConfig.DifyAPIKey = os.Getenv("DIFY_API_KEY")
 	globalConfig.HttpPort = os.Getenv("HTTP_PORT")
@@ -70,6 +72,10 @@ func (c *ConfigImpl) GetFeishuAppID() string {
 
 func (c *ConfigImpl) GetFeishuAppSecret() string {
 	return c.FeishuAppSecret
+}
+
+func (c *ConfigImpl) GetFeishuAppVerificationToken() string {
+	return c.FeishuAppVerificationToken
 }
 
 func (c *ConfigImpl) GetDifyAPIEndpoint() string {
