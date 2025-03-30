@@ -4,14 +4,16 @@ import (
 	"sync"
 	"start-feishubot/services"
 	"start-feishubot/services/cardcreator"
-	"start-feishubot/services/openai"
+	"start-feishubot/services/dify"
+	"start-feishubot/services/factory"
+	"start-feishubot/services/feishu"
 )
 
 var (
 	sessionCache services.SessionServiceCacheInterface
-	cardCreator  cardcreator.CardCreator
-	msgCache     services.MessageCacheInterface
-	openAIService *openai.ChatGPT
+	cardCreator  *cardcreator.CardCreator
+	msgCache     factory.MessageCache
+	difyClient   *dify.DifyClient
 	
 	serviceOnce sync.Once
 )
@@ -23,27 +25,32 @@ func GetSessionCache() services.SessionServiceCacheInterface {
 }
 
 // GetCardCreator returns the card creator instance
-func GetCardCreator() cardcreator.CardCreator {
+func GetCardCreator() *cardcreator.CardCreator {
 	serviceOnce.Do(initServices)
 	return cardCreator
 }
 
 // GetMsgCache returns the message cache instance
-func GetMsgCache() services.MessageCacheInterface {
+func GetMsgCache() factory.MessageCache {
 	serviceOnce.Do(initServices)
 	return msgCache
 }
 
-// GetOpenAIService returns the OpenAI service instance
-func GetOpenAIService() *openai.ChatGPT {
+// GetDifyClient returns the Dify client instance
+func GetDifyClient() *dify.DifyClient {
 	serviceOnce.Do(initServices)
-	return openAIService
+	return difyClient
 }
 
 // initServices initializes all services
 func initServices() {
 	sessionCache = services.GetSessionCache()
-	cardCreator = cardcreator.NewCardCreator()
-	msgCache = services.NewMessageCache()
-	openAIService = openai.NewChatGPT()
+	msgCache = factory.NewMessageCache()
+	
+	config := GetConfig()
+	feishuConfig := feishu.NewConfigAdapter(config)
+	cardCreator = cardcreator.NewCardCreator(feishuConfig)
+	
+	difyConfig := dify.NewConfigAdapter(config)
+	difyClient = dify.NewDifyClient(difyConfig)
 }

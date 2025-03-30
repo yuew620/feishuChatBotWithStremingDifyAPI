@@ -9,17 +9,20 @@ import (
 	"sync"
 
 	"github.com/spf13/viper"
-	"start-feishubot/config"
+	baseconfig "start-feishubot/config"
+	"start-feishubot/services/config"
 )
 
 // Config extends the base config with initialization-specific fields
 type Config struct {
-	config.Config
+	baseconfig.Config
 	// Additional initialization-specific fields
 	Initialized                        bool
 	EnableLog                          bool
+	AIProviderType                     string
 	AIApiUrl                           string
 	AIApiKey                           string
+	AIModel                            string
 	AITimeout                          int
 	AIMaxRetries                       int
 	FeishuBotName                      string
@@ -48,8 +51,8 @@ func (c *Config) GetDifyApiKey() string {
 }
 
 var (
-	cfg    = pflag.StringP("config", "c", "./config.yaml", "apiserver config file path.")
-	config *Config
+	cfgPath = pflag.StringP("config", "c", "./config.yaml", "apiserver config file path.")
+	configInstance *Config
 	once   sync.Once
 )
 
@@ -57,21 +60,20 @@ var (
 GetConfig will call LoadConfig once and return a global singleton, you should always use this function to get config
 */
 func GetConfig() *Config {
-
 	once.Do(func() {
-		config = LoadConfig(*cfg)
-		config.Initialized = true
+		configInstance = LoadConfig(*cfgPath)
+		configInstance.Initialized = true
 	})
 
-	return config
+	return configInstance
 }
 
 /*
 LoadConfig will load config and should only be called once, you should always use GetConfig to get config rather than
 call this function directly
 */
-func LoadConfig(cfg string) *Config {
-	viper.SetConfigFile(cfg)
+func LoadConfig(cfgPath string) *Config {
+	viper.SetConfigFile(cfgPath)
 	viper.ReadInConfig()
 	viper.AutomaticEnv()
 	//content, err := ioutil.ReadFile("config.yaml")
@@ -80,8 +82,8 @@ func LoadConfig(cfg string) *Config {
 	//}
 	//fmt.Println(string(content))
 
-	cfg := &Config{
-		Config: config.Config{
+	configObj := &Config{
+		Config: baseconfig.Config{
 			AppID:              getViperStringValue("APP_ID", ""),
 			AppSecret:         getViperStringValue("APP_SECRET", ""),
 			VerificationToken: getViperStringValue("APP_VERIFICATION_TOKEN", ""),
@@ -98,13 +100,15 @@ func LoadConfig(cfg string) *Config {
 		KeyFile:                            getViperStringValue("KEY_FILE", "key.pem"),
 		
 		// AI Provider配置
+		AIProviderType:                     getViperStringValue("AI_PROVIDER_TYPE", "dify"),
 		AIApiUrl:                           getViperStringValue("AI_API_URL", ""),
 		AIApiKey:                           getViperStringValue("AI_API_KEY", ""),
+		AIModel:                            getViperStringValue("AI_MODEL", "gpt-3.5-turbo"),
 		AITimeout:                          getViperIntValue("AI_TIMEOUT", 30),
 		AIMaxRetries:                       getViperIntValue("AI_MAX_RETRIES", 3),
 	}
 
-	return config
+	return configObj
 }
 
 func getViperStringValue(key string, defaultValue string) string {
@@ -141,24 +145,24 @@ func getViperBoolValue(key string, defaultValue bool) bool {
 	return boolValue
 }
 
-func (config *Config) GetCertFile() string {
-	if config.CertFile == "" {
+func (c *Config) GetCertFile() string {
+	if c.CertFile == "" {
 		return "cert.pem"
 	}
-	if _, err := os.Stat(config.CertFile); err != nil {
-		fmt.Printf("Certificate file %s does not exist, using default file cert.pem\n", config.CertFile)
+	if _, err := os.Stat(c.CertFile); err != nil {
+		fmt.Printf("Certificate file %s does not exist, using default file cert.pem\n", c.CertFile)
 		return "cert.pem"
 	}
-	return config.CertFile
+	return c.CertFile
 }
 
-func (config *Config) GetKeyFile() string {
-	if config.KeyFile == "" {
+func (c *Config) GetKeyFile() string {
+	if c.KeyFile == "" {
 		return "key.pem"
 	}
-	if _, err := os.Stat(config.KeyFile); err != nil {
-		fmt.Printf("Key file %s does not exist, using default file key.pem\n", config.KeyFile)
+	if _, err := os.Stat(c.KeyFile); err != nil {
+		fmt.Printf("Key file %s does not exist, using default file key.pem\n", c.KeyFile)
 		return "key.pem"
 	}
-	return config.KeyFile
+	return c.KeyFile
 }
