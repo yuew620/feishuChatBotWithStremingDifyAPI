@@ -2,6 +2,7 @@ package cardcreator
 
 import (
 	"context"
+	"errors"
 	"start-feishubot/services/feishu"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
@@ -33,5 +34,8 @@ func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (str
 	if err != nil {
 		return "", err
 	}
-	return resp.Data.MessageId, nil
+	if resp.Data == nil || resp.Data.MessageId == nil {
+		return "", errors.New("failed to get message ID from response")
+	}
+	return *resp.Data.MessageId, nil
 }
