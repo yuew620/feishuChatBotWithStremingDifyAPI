@@ -5,6 +5,7 @@ import (
 	"start-feishubot/services/cardcreator"
 	"start-feishubot/services/core"
 	"start-feishubot/services/feishu"
+	"context"
 )
 
 var (
@@ -23,6 +24,14 @@ func NewSessionCache() core.SessionCache {
 	return services.GetSessionCache()
 }
 
+// createCardAdapter adapts CardCreator.CreateCardEntity to cardpool.CreateCardFn
+func createCardAdapter(creator core.CardCreator) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		// Use empty content for pool cards
+		return creator.CreateCardEntity(ctx, "")
+	}
+}
+
 // InitializeServices initializes all services
 func InitializeServices() error {
 	// Get config
@@ -34,8 +43,8 @@ func InitializeServices() error {
 	// Initialize card creator
 	cardCreator = cardcreator.NewCardCreator(feishuConfig)
 
-	// Initialize card pool
-	if err := InitCardPool(cardCreator.CreateCardEntity); err != nil {
+	// Initialize card pool with adapter
+	if err := InitCardPool(createCardAdapter(cardCreator)); err != nil {
 		return err
 	}
 
