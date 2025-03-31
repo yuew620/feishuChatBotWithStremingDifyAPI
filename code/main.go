@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/pflag"
 	"log"
+	"net/http"
 	"start-feishubot/handlers"
 	"start-feishubot/initialization"
 )
@@ -15,9 +16,12 @@ func main() {
 
 	// Load configuration
 	config := initialization.GetConfig()
-	if !config.Initialized {
+	if !config.IsInitialized() {
 		log.Fatal("Failed to load configuration")
 	}
+
+	// Set global config for handlers
+	handlers.SetConfig(config)
 
 	// Initialize all services
 	if err := initialization.InitializeServices(); err != nil {
@@ -38,11 +42,22 @@ func main() {
 	r := gin.Default()
 
 	// Register routes
-	r.POST("/webhook/event", handlers.Handler)
-	r.POST("/webhook/card", handlers.Handler)
+	r.POST("/webhook/event", func(c *gin.Context) {
+		if err := handlers.Handler(c); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	})
+
+	r.POST("/webhook/card", func(c *gin.Context) {
+		if err := handlers.Handler(c); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	})
 
 	// Start server
-	addr := fmt.Sprintf(":%s", config.HttpPort)
+	addr := fmt.Sprintf(":%s", config.GetHttpPort())
 	log.Printf("Server starting on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
