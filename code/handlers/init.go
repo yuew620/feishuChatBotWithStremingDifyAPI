@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"start-feishubot/initialization"
-	"start-feishubot/services/cardpool"
 )
 
 var (
