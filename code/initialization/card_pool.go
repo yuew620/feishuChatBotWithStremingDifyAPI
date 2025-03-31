@@ -14,9 +14,9 @@ var (
 // InitCardPool 初始化卡片池
 func InitCardPool(createCardFn cardpool.CreateCardFn) error {
 	cardPoolOnce.Do(func() {
-		log.Printf("Initializing card pool")
-		cardPoolInstance = &cardpool.CardPool{}
-		cardPoolInstance.Init(createCardFn)
+		log.Printf("Starting card pool initialization")
+		cardPoolInstance = cardpool.NewCardPool(createCardFn)
+		log.Printf("Card pool initialization completed with size: %d", cardPoolInstance.GetPoolSize())
 	})
 	return nil
 }

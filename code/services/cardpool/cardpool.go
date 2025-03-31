@@ -154,8 +154,10 @@ func (p *CardPool) CreateCardWithRetry(ctx context.Context) error {
 			time.Sleep(RetryInterval)
 		}
 
+		log.Printf("Attempting to create card (attempt %d/%d)", i+1, MaxRetries)
 		cardID, err = p.createFn(ctx)
 		if err == nil {
+			log.Printf("Successfully created card with ID: %s", cardID)
 			break
 		}
 		log.Printf("Failed to create card (attempt %d/%d): %v", i+1, MaxRetries, err)
