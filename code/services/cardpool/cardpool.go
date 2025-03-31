@@ -42,6 +42,11 @@ func NewCardPool(createFn CreateCardFn) *CardPool {
 		stopChan: make(chan struct{}),
 	}
 
+	// 同步初始化卡片池
+	log.Printf("Starting initial pool fill with size %d", PoolSize)
+	pool.fillPool(context.Background())
+	log.Printf("Initial pool fill completed, current size: %d", pool.GetPoolSize())
+
 	// 启动后台任务
 	pool.startBackgroundTasks()
 
@@ -60,9 +65,6 @@ func (p *CardPool) startBackgroundTasks() {
 
 	// 启动定时重建任务
 	go p.rebuildAtMidnight()
-
-	// 初始填充卡片池
-	go p.fillPool(context.Background())
 }
 
 // Stop 停止卡片池的后台任务
@@ -107,6 +109,7 @@ func (p *CardPool) RebuildPool(ctx context.Context) {
 	p.mu.Unlock()
 
 	// 重新填充池
+	log.Printf("Rebuilding pool with size %d", PoolSize)
 	p.fillPool(ctx)
 }
 
@@ -118,17 +121,17 @@ func (p *CardPool) fillPool(ctx context.Context) {
 		p.mu.RUnlock()
 
 		if currentSize >= PoolSize {
+			log.Printf("Pool filled to target size: %d", PoolSize)
 			break
 		}
 
-		// 异步创建新卡片
-		go func() {
-			if err := p.CreateCardWithRetry(ctx); err != nil {
-				log.Printf("Failed to create card during pool fill: %v", err)
-				// 继续尝试创建，避免池子逐渐缩小
-				go p.CreateCardWithRetry(ctx)
-			}
-		}()
+		log.Printf("Creating card %d/%d", currentSize+1, PoolSize)
+		// 同步创建新卡片
+		if err := p.CreateCardWithRetry(ctx); err != nil {
+			log.Printf("Failed to create card during pool fill: %v", err)
+			// 继续尝试创建，避免池子逐渐缩小
+			continue
+		}
 
 		// 避免创建过快
 		time.Sleep(100 * time.Millisecond)
@@ -177,11 +180,16 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 
 	// 检查是否有可用卡片
 	if p.cards.Len() == 0 {
-		// 如果没有可用卡片，直接创建一个
-		cardID, err := p.createFn(ctx)
-		if err != nil {
+		log.Printf("No cards available in pool, creating new one")
+		// 如果没有可用卡片，使用CreateCardWithRetry创建一个
+		if err := p.CreateCardWithRetry(ctx); err != nil {
 			return "", fmt.Errorf("failed to create card: %w", err)
 		}
+
+		// 获取刚创建的卡片
+		element := p.cards.Back()
+		p.cards.Remove(element)
+		card := element.Value.(*CardEntry)
 
 		// 异步创建一个新卡片补充到池中
 		go func() {
@@ -192,13 +200,15 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 			}
 		}()
 
-		return cardID, nil
+		return card.CardID, nil
 	}
 
 	// 获取并移除第一个卡片
 	element := p.cards.Front()
 	p.cards.Remove(element)
 	card := element.Value.(*CardEntry)
+
+	log.Printf("Got card from pool: %s, remaining cards: %d", card.CardID, p.cards.Len())
 
 	// 异步创建新卡片补充到池中
 	go func() {
