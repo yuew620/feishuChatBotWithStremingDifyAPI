@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/services/ai"
@@ -76,36 +77,72 @@ func handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handle
 	aiProvider := handler.dify
 
 	// Get initial card from pool
+	log.Printf("Getting card from pool")
 	cardCtx, cardCancel := context.WithTimeout(ctx, 10*time.Second)
 	cardID, err := handler.cardPool.GetCard(cardCtx)
 	cardCancel()
 	if err != nil {
+		log.Printf("Failed to get card from pool: %v", err)
 		return fmt.Errorf("failed to get card from pool: %v", err)
+	}
+	log.Printf("Got card from pool: %s", cardID)
+
+	// Update card with initial "processing" message
+	updateCtx, updateCancel := context.WithTimeout(ctx, 10*time.Second)
+	_, err = handler.cardCreator.UpdateCardContent(updateCtx, cardID, "正在处理...")
+	updateCancel()
+	if err != nil {
+		log.Printf("Failed to update card with processing message: %v", err)
+		return err
 	}
 
 	// Stream chat
+	streamDone := make(chan error)
 	go func() {
 		err := aiProvider.StreamChat(aiCtx, messages, responseStream)
 		if err != nil {
-			fmt.Printf("Error streaming chat: %v\n", err)
+			log.Printf("Error streaming chat: %v", err)
 		}
+		close(streamDone)
 	}()
 
 	// Process response
-	for response := range responseStream {
-		// Create new context with timeout for each card update
-		updateCtx, updateCancel := context.WithTimeout(ctx, 10*time.Second)
-		
-		// Update card content
-		_, err := handler.cardCreator.UpdateCardContent(updateCtx, cardID, response)
-		
-		// Clean up context
-		updateCancel()
-		
-		if err != nil {
-			return err
+	for {
+		select {
+		case response, ok := <-responseStream:
+			if !ok {
+				log.Printf("Response stream closed")
+				return nil
+			}
+			log.Printf("Received response: %s", response)
+
+			// Create new context with timeout for each card update
+			updateCtx, updateCancel := context.WithTimeout(ctx, 10*time.Second)
+			
+			// Update card content
+			log.Printf("Updating card content for card ID: %s", cardID)
+			_, err := handler.cardCreator.UpdateCardContent(updateCtx, cardID, response)
+			
+			// Clean up context
+			updateCancel()
+			
+			if err != nil {
+				log.Printf("Failed to update card content: %v", err)
+				return err
+			}
+			log.Printf("Successfully updated card content")
+
+		case err := <-streamDone:
+			if err != nil {
+				log.Printf("Stream ended with error: %v", err)
+				return err
+			}
+			log.Printf("Stream ended successfully")
+			return nil
+
+		case <-aiCtx.Done():
+			log.Printf("AI context cancelled: %v", aiCtx.Err())
+			return aiCtx.Err()
 		}
 	}
-
-	return nil
 }
