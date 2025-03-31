@@ -4,6 +4,7 @@ import (
 	"log"
 	"start-feishubot/services/cardpool"
 	"sync"
+	"time"
 )
 
 var (
@@ -14,9 +15,15 @@ var (
 // InitCardPool 初始化卡片池
 func InitCardPool(createCardFn cardpool.CreateCardFn) error {
 	cardPoolOnce.Do(func() {
-		log.Printf("Starting card pool initialization")
+		log.Printf("[CardPool Init] ===== Starting card pool initialization =====")
+		startTime := time.Now()
+		
+		log.Printf("[CardPool Init] Creating new card pool instance")
 		cardPoolInstance = cardpool.NewCardPool(createCardFn)
-		log.Printf("Card pool initialization completed with size: %d", cardPoolInstance.GetPoolSize())
+		
+		log.Printf("[CardPool Init] ===== Card pool initialization completed in %v, size: %d =====", 
+			time.Since(startTime), 
+			cardPoolInstance.GetPoolSize())
 	})
 	return nil
 }
