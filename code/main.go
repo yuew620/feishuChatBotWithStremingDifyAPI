@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"start-feishubot/handlers"
 	"start-feishubot/initialization"
+	"time"
 )
 
 func main() {
@@ -24,9 +25,12 @@ func main() {
 	handlers.SetConfig(config)
 
 	// Initialize all services
+	log.Printf("[Main] ===== Starting service initialization =====")
+	startTime := time.Now()
 	if err := initialization.InitializeServices(); err != nil {
 		log.Fatalf("Failed to initialize services: %v", err)
 	}
+	log.Printf("[Main] ===== Service initialization completed in %v =====", time.Since(startTime))
 
 	// Initialize handlers
 	if err := handlers.InitHandlers(); err != nil {

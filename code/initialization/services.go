@@ -38,28 +38,38 @@ func createCardAdapter(creator core.CardCreator) func(context.Context) (string, 
 
 // InitializeServices initializes all services
 func InitializeServices() error {
+	log.Printf("[Services] ===== Starting services initialization =====")
+	startTime := time.Now()
+
 	// Get config
 	config := GetConfig()
+	log.Printf("[Services] Config loaded")
 
 	// Initialize Feishu config adapter
 	feishuConfig := feishu.NewConfigAdapter(config)
+	log.Printf("[Services] Feishu config adapter initialized")
 
 	// Initialize card creator
 	cardCreator = cardcreator.NewCardCreator(feishuConfig)
+	log.Printf("[Services] Card creator initialized")
 
 	// Initialize card pool with adapter
-	log.Printf("Starting card pool initialization")
+	log.Printf("[Services] Starting card pool initialization")
 	if err := InitCardPool(createCardAdapter(cardCreator)); err != nil {
 		return fmt.Errorf("failed to initialize card pool: %w", err)
 	}
 	cardPool = GetCardPool()
-	log.Printf("Card pool initialization completed with size: %d", cardPool.GetPoolSize())
+	log.Printf("[Services] Card pool initialized with size: %d", cardPool.GetPoolSize())
 
 	// Initialize session cache
 	sessionCache = NewSessionCache()
+	log.Printf("[Services] Session cache initialized")
 
 	// Initialize message cache
 	msgCache = NewMessageCache()
+	log.Printf("[Services] Message cache initialized")
+
+	log.Printf("[Services] ===== Services initialization completed in %v =====", time.Since(startTime))
 
 	return nil
 }

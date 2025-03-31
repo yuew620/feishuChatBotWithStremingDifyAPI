@@ -23,7 +23,7 @@ func NewCardCreator(config *feishu.ConfigAdapter) *CardCreator {
 
 // CreateCardEntity implements core.CardCreator interface
 func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (string, error) {
-	log.Printf("[Timing] Starting card entity creation")
+	log.Printf("[CardCreator] Starting card entity creation at %v", time.Now().Format("15:04:05"))
 	startTime := time.Now()
 
 	// Use Feishu API to create card entity
@@ -36,11 +36,11 @@ func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (str
 			Build()).
 		Build()
 
-	log.Printf("Creating card entity with URL: https://open.feishu.cn/open-apis/cardkit/v1/cards/")
+	log.Printf("[CardCreator] Creating card entity with URL: https://open.feishu.cn/open-apis/cardkit/v1/cards/ at %v", time.Now().Format("15:04:05"))
 
 	// Record token fetch time
 	tokenTime := time.Since(startTime)
-	log.Printf("[Timing] Token fetch took: %d ms", tokenTime.Milliseconds())
+	log.Printf("[CardCreator] Token fetch took: %d ms at %v", tokenTime.Milliseconds(), time.Now().Format("15:04:05"))
 
 	resp, err := client.Im.Message.Create(ctx, req)
 	if err != nil {
@@ -49,24 +49,24 @@ func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (str
 
 	// Record API request time
 	apiTime := time.Since(startTime) - tokenTime
-	log.Printf("[Timing] Card entity API request took: %d ms", apiTime.Milliseconds())
+	log.Printf("[CardCreator] Card entity API request took: %d ms at %v", apiTime.Milliseconds(), time.Now().Format("15:04:05"))
 
 	if resp.Data == nil || resp.Data.MessageId == nil {
 		return "", errors.New("failed to get message ID from response")
 	}
 
-	log.Printf("Successfully created card entity with ID: %s", *resp.Data.MessageId)
+	log.Printf("[CardCreator] Successfully created card entity with ID: %s at %v", *resp.Data.MessageId, time.Now().Format("15:04:05"))
 
 	// Record total time
 	totalTime := time.Since(startTime)
-	log.Printf("[Timing] Total card entity creation took: %d ms", totalTime.Milliseconds())
+	log.Printf("[CardCreator] Total card entity creation took: %d ms at %v", totalTime.Milliseconds(), time.Now().Format("15:04:05"))
 
 	return *resp.Data.MessageId, nil
 }
 
 // UpdateCardContent updates the content of an existing card
 func (c *CardCreator) UpdateCardContent(ctx context.Context, cardID string, content string) (string, error) {
-	log.Printf("[Timing] Starting card content update")
+	log.Printf("[CardCreator] Starting card content update at %v", time.Now().Format("15:04:05"))
 	startTime := time.Now()
 
 	// Use Feishu API to update card content
@@ -78,11 +78,11 @@ func (c *CardCreator) UpdateCardContent(ctx context.Context, cardID string, cont
 			Build()).
 		Build()
 
-	log.Printf("Updating card content with URL: https://open.feishu.cn/open-apis/cardkit/v1/cards/%s", cardID)
+	log.Printf("[CardCreator] Updating card content with URL: https://open.feishu.cn/open-apis/cardkit/v1/cards/%s at %v", cardID, time.Now().Format("15:04:05"))
 
 	// Record token fetch time
 	tokenTime := time.Since(startTime)
-	log.Printf("[Timing] Token fetch took: %d ms", tokenTime.Milliseconds())
+	log.Printf("[CardCreator] Token fetch took: %d ms at %v", tokenTime.Milliseconds(), time.Now().Format("15:04:05"))
 
 	resp, err := client.Im.Message.Update(ctx, req)
 	if err != nil {
@@ -91,17 +91,17 @@ func (c *CardCreator) UpdateCardContent(ctx context.Context, cardID string, cont
 
 	// Record API request time
 	apiTime := time.Since(startTime) - tokenTime
-	log.Printf("[Timing] Card content update API request took: %d ms", apiTime.Milliseconds())
+	log.Printf("[CardCreator] Card content update API request took: %d ms at %v", apiTime.Milliseconds(), time.Now().Format("15:04:05"))
 
 	if resp.Data == nil || resp.Data.MessageId == nil {
 		return "", errors.New("failed to get message ID from response")
 	}
 
-	log.Printf("Successfully updated card content with ID: %s", *resp.Data.MessageId)
+	log.Printf("[CardCreator] Successfully updated card content with ID: %s at %v", *resp.Data.MessageId, time.Now().Format("15:04:05"))
 
 	// Record total time
 	totalTime := time.Since(startTime)
-	log.Printf("[Timing] Total card content update took: %d ms", totalTime.Milliseconds())
+	log.Printf("[CardCreator] Total card content update took: %d ms at %v", totalTime.Milliseconds(), time.Now().Format("15:04:05"))
 
 	return *resp.Data.MessageId, nil
 }

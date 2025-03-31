@@ -43,15 +43,19 @@ func NewCardPool(createFn CreateCardFn) *CardPool {
 
 // Init 初始化卡片池
 func (p *CardPool) Init(createFn CreateCardFn) {
-	log.Printf("Initializing card pool with target size: %d", PoolSize)
+	log.Printf("[CardPool] Initializing card pool with target size: %d", PoolSize)
 	p.cards = list.New()
 	p.createFn = createFn
 	p.stopChan = make(chan struct{})
 
 	// 同步初始化卡片池
-	log.Printf("Starting initial pool fill with size %d", PoolSize)
+	log.Printf("[CardPool] ===== Starting initial pool fill with size %d at %v =====", PoolSize, time.Now().Format("15:04:05"))
+	startTime := time.Now()
 	p.fillPool(context.Background())
-	log.Printf("Initial pool fill completed, current size: %d", p.GetPoolSize())
+	log.Printf("[CardPool] ===== Initial pool fill completed at %v, took %v, current size: %d =====", 
+		time.Now().Format("15:04:05"),
+		time.Since(startTime),
+		p.GetPoolSize())
 
 	// 启动后台任务
 	p.startBackgroundTasks()
@@ -125,17 +129,21 @@ func (p *CardPool) fillPool(ctx context.Context) {
 		p.mu.RUnlock()
 
 		if currentSize >= PoolSize {
-			log.Printf("Pool filled to target size: %d", PoolSize)
+			log.Printf("[CardPool] Pool filled to target size: %d at %v", PoolSize, time.Now().Format("15:04:05"))
 			break
 		}
 
-		log.Printf("Creating card %d/%d", currentSize+1, PoolSize)
+		cardStartTime := time.Now()
+		log.Printf("[CardPool] >>>>> Creating card %d/%d at %v", currentSize+1, PoolSize, time.Now().Format("15:04:05"))
+		
 		// 同步创建新卡片
 		if err := p.CreateCardWithRetry(ctx); err != nil {
-			log.Printf("Failed to create card during pool fill: %v", err)
+			log.Printf("[CardPool] !!!!! Failed to create card %d/%d: %v", currentSize+1, PoolSize, err)
 			// 继续尝试创建，避免池子逐渐缩小
 			continue
 		}
+		
+		log.Printf("[CardPool] <<<<< Card %d/%d created successfully in %v", currentSize+1, PoolSize, time.Since(cardStartTime))
 
 		// 避免创建过快
 		time.Sleep(100 * time.Millisecond)
@@ -154,13 +162,13 @@ func (p *CardPool) CreateCardWithRetry(ctx context.Context) error {
 			time.Sleep(RetryInterval)
 		}
 
-		log.Printf("Attempting to create card (attempt %d/%d)", i+1, MaxRetries)
+		log.Printf("[CardPool] Attempting to create card (attempt %d/%d) at %v", i+1, MaxRetries, time.Now().Format("15:04:05"))
 		cardID, err = p.createFn(ctx)
 		if err == nil {
-			log.Printf("Successfully created card with ID: %s", cardID)
+			log.Printf("[CardPool] Successfully created card with ID: %s", cardID)
 			break
 		}
-		log.Printf("Failed to create card (attempt %d/%d): %v", i+1, MaxRetries, err)
+		log.Printf("[CardPool] Failed to create card (attempt %d/%d): %v", i+1, MaxRetries, err)
 	}
 
 	if err != nil {
@@ -175,7 +183,7 @@ func (p *CardPool) CreateCardWithRetry(ctx context.Context) error {
 	})
 	p.mu.Unlock()
 
-	log.Printf("Successfully created and added new card to pool: %s", cardID)
+	log.Printf("[CardPool] Successfully created and added new card to pool: %s at %v", cardID, time.Now().Format("15:04:05"))
 	return nil
 }
 
@@ -186,7 +194,7 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 
 	// 检查是否有可用卡片
 	if p.cards.Len() == 0 {
-		log.Printf("No cards available in pool, creating new one")
+		log.Printf("[CardPool] No cards available in pool, creating new one at %v", time.Now().Format("15:04:05"))
 		// 如果没有可用卡片，使用CreateCardWithRetry创建一个
 		if err := p.CreateCardWithRetry(ctx); err != nil {
 			return "", fmt.Errorf("failed to create card: %w", err)
@@ -200,7 +208,7 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 		// 异步创建一个新卡片补充到池中
 		go func() {
 			if err := p.CreateCardWithRetry(ctx); err != nil {
-				log.Printf("Failed to create replacement card: %v", err)
+				log.Printf("[CardPool] Failed to create replacement card at %v: %v", time.Now().Format("15:04:05"), err)
 				// 继续尝试创建，避免池子逐渐缩小
 				go p.CreateCardWithRetry(ctx)
 			}
@@ -214,7 +222,7 @@ func (p *CardPool) GetCard(ctx context.Context) (string, error) {
 	p.cards.Remove(element)
 	card := element.Value.(*CardEntry)
 
-	log.Printf("Got card from pool: %s, remaining cards: %d", card.CardID, p.cards.Len())
+	log.Printf("[CardPool] Got card from pool: %s, remaining cards: %d at %v", card.CardID, p.cards.Len(), time.Now().Format("15:04:05"))
 
 	// 异步创建新卡片补充到池中
 	go func() {
