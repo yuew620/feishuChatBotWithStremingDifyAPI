@@ -48,9 +48,8 @@ func InitializeServices() error {
 
 	// Initialize card pool with adapter
 	log.Printf("Starting card pool initialization")
-	cardPool = &cardpool.CardPool{}
-	cardPool.Init(createCardAdapter(cardCreator))
-	log.Printf("Card pool initialization completed")
+	cardPool = cardpool.NewCardPool(createCardAdapter(cardCreator))
+	log.Printf("Card pool initialization completed with size: %d", cardPool.GetPoolSize())
 
 	// Initialize session cache
 	sessionCache = NewSessionCache()
