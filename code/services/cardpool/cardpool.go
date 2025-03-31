@@ -34,23 +34,19 @@ type CardPool struct {
 // CreateCardFn 定义创建卡片的函数类型
 type CreateCardFn func(context.Context) (string, error)
 
-// NewCardPool 创建新的卡片池
-func NewCardPool(createFn CreateCardFn) *CardPool {
-	pool := &CardPool{
-		cards:    list.New(),
-		createFn: createFn,
-		stopChan: make(chan struct{}),
-	}
+// Init 初始化卡片池
+func (p *CardPool) Init(createFn CreateCardFn) {
+	p.cards = list.New()
+	p.createFn = createFn
+	p.stopChan = make(chan struct{})
 
 	// 同步初始化卡片池
 	log.Printf("Starting initial pool fill with size %d", PoolSize)
-	pool.fillPool(context.Background())
-	log.Printf("Initial pool fill completed, current size: %d", pool.GetPoolSize())
+	p.fillPool(context.Background())
+	log.Printf("Initial pool fill completed, current size: %d", p.GetPoolSize())
 
 	// 启动后台任务
-	pool.startBackgroundTasks()
-
-	return pool
+	p.startBackgroundTasks()
 }
 
 // startBackgroundTasks 启动后台任务

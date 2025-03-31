@@ -16,15 +16,8 @@ var (
 func InitCardPool(createCardFn cardpool.CreateCardFn) error {
 	cardPoolOnce.Do(func() {
 		log.Printf("Initializing card pool")
-		cardPoolInstance = cardpool.NewCardPool(createCardFn)
-		
-		// 初始填充卡片池
-		ctx := context.Background()
-		for i := 0; i < cardpool.PoolSize; i++ {
-			if err := cardPoolInstance.CreateCardWithRetry(ctx); err != nil {
-				log.Printf("Failed to create initial card %d: %v", i+1, err)
-			}
-		}
+		cardPoolInstance = &cardpool.CardPool{}
+		cardPoolInstance.Init(createCardFn)
 	})
 	return nil
 }
