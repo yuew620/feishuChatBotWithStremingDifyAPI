@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/services/ai"
 )
@@ -67,12 +68,16 @@ func handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handle
 	responseStream := make(chan string)
 	defer close(responseStream)
 
+	// Create context with timeout for AI request
+	aiCtx, aiCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer aiCancel()
+
 	// Get AI provider
 	aiProvider := handler.dify
 
 	// Stream chat
 	go func() {
-		err := aiProvider.StreamChat(ctx, messages, responseStream)
+		err := aiProvider.StreamChat(aiCtx, messages, responseStream)
 		if err != nil {
 			fmt.Printf("Error streaming chat: %v\n", err)
 		}
@@ -80,8 +85,15 @@ func handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handle
 
 	// Process response
 	for response := range responseStream {
+		// Create new context with timeout for each card update
+		cardCtx, cardCancel := context.WithTimeout(ctx, 10*time.Second)
+		
 		// Send message
-		_, err := handler.cardCreator.CreateCardEntity(ctx, response)
+		_, err := handler.cardCreator.CreateCardEntity(cardCtx, response)
+		
+		// Clean up context
+		cardCancel()
+		
 		if err != nil {
 			return err
 		}

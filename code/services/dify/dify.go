@@ -25,19 +25,38 @@ func NewDifyClient(config *ConfigAdapter) *DifyClient {
 
 // StreamChat implements core.AIProvider interface
 func (d *DifyClient) StreamChat(ctx context.Context, messages []ai.Message, responseStream chan string) error {
-	// Convert messages to Dify format
-	difyMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		difyMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
+	// Get the last message as query
+	if len(messages) == 0 {
+		return fmt.Errorf("no messages provided")
+	}
+	query := messages[len(messages)-1].Content
+
+	// Convert previous messages to history
+	var history string
+	if len(messages) > 1 {
+		historyMessages := messages[:len(messages)-1]
+		historyBytes, err := json.Marshal(historyMessages)
+		if err != nil {
+			return fmt.Errorf("failed to marshal history: %v", err)
 		}
+		history = string(historyBytes)
+	} else {
+		history = "null"
 	}
 
 	// Prepare request body
 	requestBody := map[string]interface{}{
-		"messages": difyMessages,
-		"stream":   true,
+		"inputs": map[string]interface{}{
+			"history": history,
+		},
+		"query":         query,
+		"response_mode": "streaming",
+		"user":         ctx.Value("user_id").(string),
+	}
+
+	// Add conversation_id if exists
+	if conversationID := ctx.Value("conversation_id"); conversationID != nil {
+		requestBody["conversation_id"] = conversationID.(string)
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -46,7 +65,7 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []ai.Message, resp
 	}
 
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, "POST", d.config.GetAPIEndpoint()+"/chat/completions", strings.NewReader(string(jsonBody)))
+	req, err := http.NewRequestWithContext(ctx, "POST", d.config.GetAPIEndpoint()+"/chat-messages", strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}
@@ -94,22 +113,21 @@ func (d *DifyClient) StreamChat(ctx context.Context, messages []ai.Message, resp
 
 		// Parse JSON
 		var response struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
+			Event   string `json:"event"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
 		}
 		if err := json.Unmarshal([]byte(data), &response); err != nil {
 			return fmt.Errorf("failed to parse response: %v", err)
 		}
 
 		// Send content to stream
-		if len(response.Choices) > 0 && response.Choices[0].Delta.Content != "" {
+		if response.Event == "message" && response.Message.Content != "" {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case responseStream <- response.Choices[0].Delta.Content:
+			case responseStream <- response.Message.Content:
 			}
 		}
 	}
