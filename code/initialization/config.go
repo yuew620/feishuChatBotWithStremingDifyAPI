@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"start-feishubot/services/config"
+	"time"
 )
 
 // ConfigImpl implements the Config interface
@@ -25,12 +26,17 @@ var globalConfig *ConfigImpl
 // GetConfig returns the global configuration instance
 func GetConfig() config.Config {
 	if globalConfig == nil {
+		log.Printf("[Config] ===== Starting configuration initialization =====")
+		startTime := time.Now()
+		
 		globalConfig = &ConfigImpl{}
 		if err := loadConfig(); err != nil {
-			log.Printf("Failed to load config: %v", err)
+			log.Printf("[Config] Failed to load config: %v", err)
 			return globalConfig
 		}
 		globalConfig.Initialized = true
+		
+		log.Printf("[Config] ===== Configuration initialization completed in %v =====", time.Since(startTime))
 	}
 	return globalConfig
 }
@@ -40,17 +46,22 @@ func loadConfig() error {
 	// Try to load from config.yaml first
 	configPath := filepath.Join("config.yaml")
 	if _, err := os.Stat(configPath); err == nil {
+		log.Printf("[Config] Loading configuration from file: %s", configPath)
 		data, err := ioutil.ReadFile(configPath)
 		if err != nil {
+			log.Printf("[Config] Failed to read config file: %v", err)
 			return err
 		}
 		if err := json.Unmarshal(data, globalConfig); err != nil {
+			log.Printf("[Config] Failed to parse config file: %v", err)
 			return err
 		}
+		log.Printf("[Config] Successfully loaded configuration from file")
 		return nil
 	}
 
 	// If config.yaml doesn't exist, try environment variables
+	log.Printf("[Config] Config file not found, loading from environment variables")
 	globalConfig.FeishuAppID = os.Getenv("FEISHU_APP_ID")
 	globalConfig.FeishuAppSecret = os.Getenv("FEISHU_APP_SECRET")
 	globalConfig.FeishuAppVerificationToken = os.Getenv("FEISHU_APP_VERIFICATION_TOKEN")
@@ -59,7 +70,9 @@ func loadConfig() error {
 	globalConfig.HttpPort = os.Getenv("HTTP_PORT")
 	if globalConfig.HttpPort == "" {
 		globalConfig.HttpPort = "8080"
+		log.Printf("[Config] Using default HTTP port: %s", globalConfig.HttpPort)
 	}
+	log.Printf("[Config] Successfully loaded configuration from environment variables")
 
 	return nil
 }

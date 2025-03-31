@@ -15,27 +15,36 @@ func main() {
 	// Parse command line flags
 	pflag.Parse()
 
+	log.Printf("[Main] ===== Starting application initialization =====")
+	mainStartTime := time.Now()
+
 	// Load configuration
+	log.Printf("[Main] Loading configuration...")
 	config := initialization.GetConfig()
 	if !config.IsInitialized() {
-		log.Fatal("Failed to load configuration")
+		log.Fatal("[Main] Failed to load configuration")
 	}
+	log.Printf("[Main] Configuration loaded successfully")
 
 	// Set global config for handlers
+	log.Printf("[Main] Setting global config for handlers")
 	handlers.SetConfig(config)
 
 	// Initialize all services
-	log.Printf("[Main] ===== Starting service initialization =====")
-	startTime := time.Now()
+	log.Printf("[Main] Starting service initialization")
+	serviceStartTime := time.Now()
 	if err := initialization.InitializeServices(); err != nil {
 		log.Fatalf("Failed to initialize services: %v", err)
 	}
-	log.Printf("[Main] ===== Service initialization completed in %v =====", time.Since(startTime))
+	log.Printf("[Main] Service initialization completed in %v", time.Since(serviceStartTime))
 
 	// Initialize handlers
+	log.Printf("[Main] Starting handlers initialization")
+	handlersStartTime := time.Now()
 	if err := handlers.InitHandlers(); err != nil {
-		log.Fatalf("Failed to initialize handlers: %v", err)
+		log.Fatalf("[Main] Failed to initialize handlers: %v", err)
 	}
+	log.Printf("[Main] Handlers initialization completed in %v", time.Since(handlersStartTime))
 
 	// Register shutdown hook
 	defer func() {
@@ -60,9 +69,11 @@ func main() {
 		}
 	})
 
+	log.Printf("[Main] ===== Application initialization completed in %v =====", time.Since(mainStartTime))
+
 	// Start server
 	addr := fmt.Sprintf(":%s", config.GetHttpPort())
-	log.Printf("Server starting on %s", addr)
+	log.Printf("[Main] Server starting on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

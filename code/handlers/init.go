@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"log"
 	"start-feishubot/initialization"
+	"time"
 )
 
 var (
@@ -10,14 +12,20 @@ var (
 
 // InitHandlers initializes all handlers
 func InitHandlers() error {
+	log.Printf("[Handlers] ===== Starting handlers initialization =====")
+	startTime := time.Now()
+
 	// Get services
+	log.Printf("[Handlers] Getting required services")
 	sessionCache := initialization.GetSessionCache()
 	cardCreator := initialization.GetCardCreator()
 	msgCache := initialization.GetMsgCache()
 	aiProvider := initialization.GetAIProvider()
 	cardPool := initialization.GetCardPool()
+	log.Printf("[Handlers] All required services retrieved")
 
 	// Create message handler
+	log.Printf("[Handlers] Creating message handler")
 	messageHandler = &MessageHandler{
 		sessionCache: sessionCache,
 		cardCreator: cardCreator,
@@ -25,7 +33,9 @@ func InitHandlers() error {
 		dify:        aiProvider,
 		cardPool:    cardPool,
 	}
+	log.Printf("[Handlers] Message handler created")
 
+	log.Printf("[Handlers] ===== Handlers initialization completed in %v =====", time.Since(startTime))
 	return nil
 }
 
