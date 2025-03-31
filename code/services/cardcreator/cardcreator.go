@@ -36,7 +36,7 @@ func (c *CardCreator) CreateCardEntity(ctx context.Context, content string) (str
 			Build()).
 		Build()
 
-	log.Printf("Creating card entity with URL: %s", req.ApiPath)
+	log.Printf("Creating card entity with URL: https://open.feishu.cn/open-apis/cardkit/v1/cards/")
 
 	// Record token fetch time
 	tokenTime := time.Since(startTime)
@@ -78,7 +78,7 @@ func (c *CardCreator) UpdateCardContent(ctx context.Context, cardID string, cont
 			Build()).
 		Build()
 
-	log.Printf("Updating card content with URL: %s", req.ApiPath)
+	log.Printf("Updating card content with URL: https://open.feishu.cn/open-apis/cardkit/v1/cards/%s", cardID)
 
 	// Record token fetch time
 	tokenTime := time.Since(startTime)

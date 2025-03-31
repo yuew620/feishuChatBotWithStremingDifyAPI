@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"start-feishubot/services/cardpool"
 	"start-feishubot/services/config"
 	"start-feishubot/services/core"
 )
@@ -23,12 +24,14 @@ func NewMessageHandler(
 	cardCreator core.CardCreator,
 	msgCache core.MessageCache,
 	aiProvider core.AIProvider,
+	cardPool *cardpool.CardPool,
 ) *MessageHandler {
 	return &MessageHandler{
 		sessionCache: sessionCache,
 		cardCreator: cardCreator,
 		msgCache:    msgCache,
 		dify:        aiProvider,
+		cardPool:    cardPool,
 	}
 }
 
