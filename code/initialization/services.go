@@ -1,17 +1,20 @@
 package initialization
 
 import (
+	"context"
+	"log"
 	"start-feishubot/services"
 	"start-feishubot/services/cardcreator"
+	"start-feishubot/services/cardpool"
 	"start-feishubot/services/core"
 	"start-feishubot/services/feishu"
-	"context"
 )
 
 var (
 	sessionCache core.SessionCache
 	cardCreator  core.CardCreator
 	msgCache     core.MessageCache
+	cardPool     *cardpool.CardPool
 )
 
 // NewMessageCache creates a new message cache
@@ -44,9 +47,10 @@ func InitializeServices() error {
 	cardCreator = cardcreator.NewCardCreator(feishuConfig)
 
 	// Initialize card pool with adapter
-	if err := InitCardPool(createCardAdapter(cardCreator)); err != nil {
-		return err
-	}
+	log.Printf("Starting card pool initialization")
+	cardPool = &cardpool.CardPool{}
+	cardPool.Init(createCardAdapter(cardCreator))
+	log.Printf("Card pool initialization completed")
 
 	// Initialize session cache
 	sessionCache = NewSessionCache()
@@ -70,4 +74,16 @@ func GetCardCreator() core.CardCreator {
 // GetMsgCache returns the message cache service
 func GetMsgCache() core.MessageCache {
 	return msgCache
+}
+
+// GetCardPool returns the card pool service
+func GetCardPool() *cardpool.CardPool {
+	return cardPool
+}
+
+// ShutdownServices performs cleanup of all services
+func ShutdownServices() {
+	if cardPool != nil {
+		cardPool.Stop()
+	}
 }
