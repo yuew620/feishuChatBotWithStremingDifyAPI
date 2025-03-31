@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"start-feishubot/initialization"
+	"start-feishubot/services/cardpool"
 )
 
 var (
@@ -15,14 +16,16 @@ func InitHandlers() error {
 	cardCreator := initialization.GetCardCreator()
 	msgCache := initialization.GetMsgCache()
 	aiProvider := initialization.GetAIProvider()
+	cardPool := initialization.GetCardPool()
 
 	// Create message handler
-	messageHandler = NewMessageHandler(
-		sessionCache,
-		cardCreator,
-		msgCache,
-		aiProvider,
-	)
+	messageHandler = &MessageHandler{
+		sessionCache: sessionCache,
+		cardCreator: cardCreator,
+		msgCache:    msgCache,
+		dify:        aiProvider,
+		cardPool:    cardPool,
+	}
 
 	return nil
 }

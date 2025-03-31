@@ -75,6 +75,14 @@ func handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handle
 	// Get AI provider
 	aiProvider := handler.dify
 
+	// Get initial card from pool
+	cardCtx, cardCancel := context.WithTimeout(ctx, 10*time.Second)
+	cardID, err := handler.cardPool.GetCard(cardCtx)
+	cardCancel()
+	if err != nil {
+		return fmt.Errorf("failed to get card from pool: %v", err)
+	}
+
 	// Stream chat
 	go func() {
 		err := aiProvider.StreamChat(aiCtx, messages, responseStream)
@@ -86,13 +94,13 @@ func handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1, handle
 	// Process response
 	for response := range responseStream {
 		// Create new context with timeout for each card update
-		cardCtx, cardCancel := context.WithTimeout(ctx, 10*time.Second)
+		updateCtx, updateCancel := context.WithTimeout(ctx, 10*time.Second)
 		
-		// Send message
-		_, err := handler.cardCreator.CreateCardEntity(cardCtx, response)
+		// Update card content
+		_, err := handler.cardCreator.UpdateCardContent(updateCtx, cardID, response)
 		
 		// Clean up context
-		cardCancel()
+		updateCancel()
 		
 		if err != nil {
 			return err

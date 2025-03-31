@@ -5,6 +5,7 @@ import (
 	"errors"
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"start-feishubot/services/cardpool"
 	"start-feishubot/services/core"
 )
 
@@ -14,6 +15,7 @@ type MessageHandler struct {
 	cardCreator  core.CardCreator
 	msgCache     core.MessageCache
 	dify         core.AIProvider
+	cardPool     *cardpool.CardPool
 }
 
 // MessageHandlerInterface defines the interface for message handlers

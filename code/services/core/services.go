@@ -18,6 +18,7 @@ type MessageCache interface {
 // CardCreator interface for creating cards
 type CardCreator interface {
 	CreateCardEntity(ctx context.Context, content string) (string, error)
+	UpdateCardContent(ctx context.Context, cardID string, content string) (string, error)
 }
 
 // AIProvider interface for AI services
@@ -81,29 +82,29 @@ type SessionCache interface {
 }
 
 // Basic MessageCache implementation
-type messageCacheImpl struct {
-	cache sync.Map
-	processed sync.Map
+type MessageCacheImpl struct {
+	Cache     sync.Map
+	Processed sync.Map
 }
 
-func (m *messageCacheImpl) Set(key string, value interface{}) {
-	m.cache.Store(key, value)
+func (m *MessageCacheImpl) Set(key string, value interface{}) {
+	m.Cache.Store(key, value)
 }
 
-func (m *messageCacheImpl) Get(key string) (interface{}, bool) {
-	return m.cache.Load(key)
+func (m *MessageCacheImpl) Get(key string) (interface{}, bool) {
+	return m.Cache.Load(key)
 }
 
-func (m *messageCacheImpl) IfProcessed(key string) bool {
-	_, exists := m.processed.Load(key)
+func (m *MessageCacheImpl) IfProcessed(key string) bool {
+	_, exists := m.Processed.Load(key)
 	return exists
 }
 
-func (m *messageCacheImpl) TagProcessed(key string) {
-	m.processed.Store(key, true)
+func (m *MessageCacheImpl) TagProcessed(key string) {
+	m.Processed.Store(key, true)
 }
 
 // NewMessageCache creates a new message cache instance
 func NewMessageCache() MessageCache {
-	return &messageCacheImpl{}
+	return &MessageCacheImpl{}
 }
