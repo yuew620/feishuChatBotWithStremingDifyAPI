@@ -8,7 +8,6 @@ var (
 	sessionCache core.SessionCache
 	cardCreator  core.CardCreator
 	msgCache     core.MessageCache
-	aiProvider   core.AIProvider
 )
 
 // InitializeServices initializes all services
@@ -30,9 +29,4 @@ func GetCardCreator() core.CardCreator {
 // GetMsgCache returns the message cache service
 func GetMsgCache() core.MessageCache {
 	return msgCache
-}
-
-// GetAIProvider returns the AI provider service
-func GetAIProvider() core.AIProvider {
-	return aiProvider
 }
