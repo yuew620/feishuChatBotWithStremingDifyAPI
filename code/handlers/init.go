@@ -1,38 +1,34 @@
 package handlers
 
 import (
-	"context"
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	"start-feishubot/services/factory"
+	"start-feishubot/initialization"
+	"start-feishubot/services/core"
 )
 
-var handler MessageHandlerInterface
+var (
+	messageHandler *MessageHandler
+)
 
-// InitHandlers initializes the handlers
+// InitHandlers initializes all handlers
 func InitHandlers() error {
-	// Get service factory instance
-	serviceFactory := factory.GetInstance()
+	// Get services
+	sessionCache := initialization.GetSessionCache()
+	cardCreator := initialization.GetCardCreator()
+	msgCache := initialization.GetMsgCache()
+	aiProvider := initialization.GetAIProvider()
 
 	// Create message handler
-	h := NewMessageHandler(
-		serviceFactory.GetSessionCache(),
-		serviceFactory.GetCardCreator(),
-		serviceFactory.GetMsgCache(),
-		serviceFactory.GetAIProvider(),
+	messageHandler = NewMessageHandler(
+		sessionCache,
+		cardCreator,
+		msgCache,
+		aiProvider,
 	)
-	handler = h
+
 	return nil
 }
 
-func Handler(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-	return handler.msgReceivedHandler(ctx, event)
-}
-
-func ReadHandler(ctx context.Context, event *larkim.P2MessageReadV1) error {
-	return nil
-}
-
-// Shutdown 关闭所有服务
+// Shutdown performs cleanup
 func Shutdown() {
-	// Nothing to do here since services are managed by factory
+	// Add cleanup code here
 }
