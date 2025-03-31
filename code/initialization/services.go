@@ -1,60 +1,38 @@
 package initialization
 
 import (
-	"context"
-	"start-feishubot/services"
-	"start-feishubot/services/cardcreator"
-	"start-feishubot/services/cardservice"
-	"start-feishubot/services/dify"
-	"start-feishubot/services/factory"
-	"start-feishubot/services/feishu"
+	"start-feishubot/services/core"
+)
+
+var (
+	sessionCache core.SessionCache
+	cardCreator  core.CardCreator
+	msgCache     core.MessageCache
+	aiProvider   core.AIProvider
 )
 
 // InitializeServices initializes all services
 func InitializeServices() error {
-	// Get service factory instance
-	serviceFactory := factory.GetInstance()
-
-	// Initialize session cache
-	sessionCache := services.GetSessionCache()
-	serviceFactory.SetSessionCache(sessionCache)
-
-	// Get configuration
-	config := GetConfig()
-
-	// Initialize Feishu services
-	feishuConfig := feishu.NewConfigAdapter(config)
-	cardCreator := cardcreator.NewCardCreator(feishuConfig)
-	serviceFactory.SetCardCreator(cardCreator)
-
-	// Initialize card pool
-	cardservice.InitCardPool(func(ctx context.Context) (string, error) {
-		return cardCreator.CreateCardEntity(ctx, "")
-	})
-
-	// Initialize Dify services
-	difyConfig := dify.NewConfigAdapter(config)
-	difyClient := dify.NewDifyClient(difyConfig)
-	serviceFactory.SetAIProvider(difyClient)
-
-	// Initialize AI provider
-	_, err := InitAIProvider()
-	if err != nil {
-		return err
-	}
-
+	// Initialize services here
 	return nil
 }
 
-// ShutdownServices gracefully shuts down all services
-func ShutdownServices() error {
-	// Shutdown card pool
-	cardservice.ShutdownCardPool()
+// GetSessionCache returns the session cache service
+func GetSessionCache() core.SessionCache {
+	return sessionCache
+}
 
-	// Shutdown AI provider
-	if err := ShutdownAIProvider(); err != nil {
-		return err
-	}
+// GetCardCreator returns the card creator service
+func GetCardCreator() core.CardCreator {
+	return cardCreator
+}
 
-	return nil
+// GetMsgCache returns the message cache service
+func GetMsgCache() core.MessageCache {
+	return msgCache
+}
+
+// GetAIProvider returns the AI provider service
+func GetAIProvider() core.AIProvider {
+	return aiProvider
 }
