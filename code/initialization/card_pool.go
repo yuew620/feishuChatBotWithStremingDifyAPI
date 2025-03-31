@@ -21,11 +21,6 @@ func InitCardPool(createCardFn cardpool.CreateCardFn) error {
 	return nil
 }
 
-// GetCardPool 获取卡片池实例
-func GetCardPool() *cardpool.CardPool {
-	return cardPoolInstance
-}
-
 // ShutdownCardPool 关闭卡片池
 func ShutdownCardPool() {
 	if cardPoolInstance != nil {
