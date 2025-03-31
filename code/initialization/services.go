@@ -2,6 +2,7 @@ package initialization
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"start-feishubot/services"
 	"start-feishubot/services/cardcreator"
@@ -48,7 +49,10 @@ func InitializeServices() error {
 
 	// Initialize card pool with adapter
 	log.Printf("Starting card pool initialization")
-	cardPool = cardpool.NewCardPool(createCardAdapter(cardCreator))
+	if err := InitCardPool(createCardAdapter(cardCreator)); err != nil {
+		return fmt.Errorf("failed to initialize card pool: %w", err)
+	}
+	cardPool = GetCardPool()
 	log.Printf("Card pool initialization completed with size: %d", cardPool.GetPoolSize())
 
 	// Initialize session cache
